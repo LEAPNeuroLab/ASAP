@@ -20,4 +20,4 @@ This is a 2(Controllability:Controllable/Unontrollable) x2(Shock Intensity:Perce
 
 The motor response involves the use of a joystick to move a center cursor, a small triangle, to a target circle which will be randomly placed in one of the four corners of the screen. Participants have 940ms to complete this motor response. A successful response is defined as any overlap of the cursor with the target circle. 
 
-![Active Escape task design!](/taskImg/AE_taskDesign.jpg "Active Escape Design")
+![Active Escape task design!](/taskImg/AE_taskDesign.png "Active Escape Design")
