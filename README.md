@@ -5,7 +5,7 @@ fMRI task used to explore emotion-motor interactions
 
 This is a 2(Controllability:Controllable/Unontrollable) x2(Shock Intensity:Perceptible/Unpleasant) design, such that there are four trial types in total:
 
-  - Controllable, Perceptible:
+  <span style="color:blue">- Controllable, Perceptible:</span>.
       - participants can try to make a *successful* motor response to avoid a **perceptible** shock
       
   - Controllable, Unpleasant:
