@@ -3,7 +3,7 @@ fMRI task used to explore emotion-motor interactions
 
 ### In this task, participants will view a countdown on the screen before making a quick motor response using a joystick. Depending on participants' performance, as well as the type of trial they completed, they may or may not receive a shock.
 
-This is a 2(Controllability:Controllable/Unontrollable) x2(Shock Intensity:Perceptible/Unpleasant) design, such that there are four trial types in total:
+This is a 2( Controllability:Controllable/Uncontrollable) x2 (Shock Intensity:Perceptible/Unpleasant) design, such that there are four trial types in total:
 
   - Controllable, Perceptible:
       - participants can try to make a *successful* motor response to avoid a **perceptible** shock
