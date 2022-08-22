@@ -22,7 +22,7 @@ The motor response involves the use of a joystick to move a center cursor, a sma
 
 Following the motor response, participants will be responding to two questions about their emotional experience.
 
-![Active Escape task design!](/taskImg/AE_taskDesign.png "Active Escape Design")
+![Active Escape task design!](/Task Design/AE_taskDesign.png "Active Escape Design")
 
 
 #### Scripts in this repository
