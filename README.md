@@ -9,6 +9,6 @@ Within this repository is code for an Active Escape task and an Approach-Avoidan
 
    - In the Approach-Avoidance task, participants view emotional images and are instructed to use a joystick to simulate movement towards or away from the image. 
 
-In these tasks, we manipulate emotional arousal to examine its effects on motor efficiency. This study is 
+In these tasks, we manipulate emotional arousal to examine its effects on motor efficiency. We aim to explore how neural circuits involved in emotion processing may be leveraged to function as alternative pathways to the motor cortex, potentially shedding light on the mechanisms that drive paradoxical kinesia in individuals with Parkinson's.   
 
 ![Asap!](https://github.com/LEAPNeuroLab/ASAP/blob/main/Active%20Escape/TaskDesign/asapImg.png "Asap logo")
