@@ -1,4 +1,4 @@
-# Aligning Science Across Parkinson's (ASAP)
+# Aligning Science Across Parkinson's (ASAP) at UCSB
 
 #### fMRI tasks used to explore emotion-motor interactions
 
