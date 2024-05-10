@@ -4,6 +4,7 @@ In the approach-avoidance task, emotional-picture valence (2: Valence: Negative 
 
 This produced two contrasts of emotion-action congruence: 1. Congruent (Con): where the emotion-provoked action tendency is aligned with the instructed motor action goal and  2. Incongruent (Incon): where the emotion-driven action tendency was at conflict with the instructed motor action goal. Our aim was to test whether emotional valence facilitated movement as a function of motor-action congruence (indexed by reaction times, velocity and accuracy).
 
+trial
 
 ![Asap!](https://github.com/LEAPNeuroLab/ASAP/blob/main/Approach%20Avoidance/Images/asapImg.png "Asap logo")
 
