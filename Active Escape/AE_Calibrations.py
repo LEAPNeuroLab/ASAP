@@ -13,4 +13,4 @@ from stimCalibration_Perceptible10v2 import * #Run the second perceptible calibr
 #And will start off with their perceptible shock that they decided on
 
 from stimCalibration_Unpleasant10v2_sure import *#Run the second unpleasant calibration (also in the scanner)
-#This will also start off with the level of unpleasant shock decided on in the first round
+#This will also start off with the level of unpleasant shock decided on in the first round - there is an additional question that asks if the participant is sure about the shock level
