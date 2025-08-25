@@ -1,0 +1,410 @@
+---
+title: "PFC Paper - Stasiak & Lapate 2024 - PPI Analyses"
+output: hrbrthemes::ipsum_pdf
+---
+First load our packages
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,  dev = "cairo_pdf")
+library(DescTools)
+library(smplot2)
+library(emmeans)
+library(lme4)
+library(dplyr)
+library(Rmisc)
+library(ggplot2)
+library(hrbrthemes)
+library(forcats)
+library(data.table)
+library(viridis)
+library(sjPlot)
+library(sjmisc)
+library(lmerTest)
+library(dplyr)
+```
+
+Plotting PPI betas
+
+```{r}
+ppi<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/combined_PPI_betas.csv")
+ppi<-subset(ppi, select=-c(X.1, X, numVoxels, max))
+names(ppi)[names(ppi) == 'mean'] <- 'beta'
+
+ppi <- ppi %>%
+  mutate(
+         cope = case_when(
+           contrast == "PPI_CU_context" ~ "CU",
+           contrast == "PPI_CP_context" ~ "CP",
+           contrast == "PPI_UU_context" ~ "UU",
+           contrast == "PPI_UP_context" ~ "UP",
+           contrast == "PPI_CU_action" ~ "CU",
+           contrast == "PPI_CP_action" ~ "CP",
+           contrast == "PPI_UU_action" ~ "UU",
+           contrast == "PPI_UP_action" ~ "UP",
+           contrast == "PPI_CU_CPaction" ~ "CU_CP",
+           contrast == "PPI_CU_CPcontext" ~ "CU_CP",
+           contrast == "PPI_CU_UU_context" ~ "CU_UU",
+           contrast == "PPI_CU_UU_action" ~ "CU_UU",
+           contrast == "PPI_UU_UP_action" ~ "UU_UP",
+           contrast == "PPI_UU_UP_context" ~ "UU_UP",
+           contrast == "PPI_CP_UP_context" ~ "CP_UP",
+           contrast == "PPI_CU_UP_action" ~ "CP_UP"
+         ),
+         shock = case_when(
+           contrast == "PPI_CU_context" ~ "Unpleasant",
+           contrast == "PPI_CP_context" ~ "Mild",
+           contrast == "PPI_UU_context" ~ "Unpleasant",
+           contrast == "PPI_UP_context" ~ "Mild",
+           contrast == "PPI_CU_action" ~ "Unpleasant",
+           contrast == "PPI_CP_action" ~ "Mild",
+           contrast == "PPI_UU_action" ~ "Unpleasant",
+           contrast == "PPI_UP_action" ~ "Mild",
+           contrast == "PPI_CU_CPaction" ~ "Unpleasant_Mild",
+           contrast == "PPI_CU_CPcontext" ~ "Unpleasant_Mild",
+           contrast == "PPI_CU_UU_context" ~ "Unpleasant_Unpleasant",
+           contrast == "PPI_CU_UU_action" ~ "Unpleasant_Unpleasant",
+           contrast == "PPI_UU_UP_action" ~ "Unpleasant_Mild",
+           contrast == "PPI_UU_UP_context" ~ "Unpleasant_Mild",
+           contrast == "PPI_CP_UP_context" ~ "Mild_Mild",
+           contrast == "PPI_CU_UP_action" ~ "Mild_Mild"
+         ),
+         control = case_when(
+           contrast == "PPI_CU_context" ~ "Controllable",
+           contrast == "PPI_CP_context" ~ "Controllable",
+           contrast == "PPI_UU_context" ~ "Uncontrollable",
+           contrast == "PPI_UP_context" ~ "Uncontrollable",
+           contrast == "PPI_CU_action" ~ "Controllable",
+           contrast == "PPI_CP_action" ~ "Controllable",
+           contrast == "PPI_UU_action" ~ "Uncontrollable",
+           contrast == "PPI_UP_action" ~ "Uncontrollable",
+           contrast == "PPI_CU_CPaction" ~ "Controllable_Controllable",
+           contrast == "PPI_CU_CPcontext" ~ "Controllable_Controllable",
+           contrast == "PPI_CU_UU_context" ~ "Controllable_Uncontrollable",
+           contrast == "PPI_CU_UU_action" ~ "Controllable_Uncontrollable",
+           contrast == "PPI_UU_UP_action" ~ "Uncontrollable_Uncontrollable",
+           contrast == "PPI_UU_UP_context" ~ "Uncontrollable_Uncontrollable",
+           contrast == "PPI_CP_UP_context" ~ "Controllable_Uncontrollable",
+           contrast == "PPI_CU_UP_action" ~ "Controllable_Uncontrollable"
+         ),
+          epoch = case_when(
+           contrast == "PPI_CU_context" ~ "context",
+           contrast == "PPI_CP_context" ~ "context",
+           contrast == "PPI_UU_context" ~ "context",
+           contrast == "PPI_UP_context" ~ "context",
+           contrast == "PPI_CU_action" ~ "action",
+           contrast == "PPI_CP_action" ~ "action",
+           contrast == "PPI_UU_action" ~ "action",
+           contrast == "PPI_UP_action" ~ "action",
+           contrast == "PPI_CU_CPaction" ~ "action",
+           contrast == "PPI_CU_CPcontext" ~ "context",
+           contrast == "PPI_CU_UU_context" ~ "context",
+           contrast == "PPI_CU_UU_action" ~ "action",
+           contrast == "PPI_UU_UP_action" ~ "action",
+           contrast == "PPI_UU_UP_context" ~ "context",
+           contrast == "PPI_CP_UP_context" ~ "context",
+           contrast == "PPI_CU_UP_action" ~ "action"
+         )
+  )
+```
+
+## For plotting the conditions on the x-axis - no deltas 
+
+```{r}
+ppi_sub<-subset(ppi, cope=="CU"|cope=="CP"|cope=="UU"|cope=="UP")
+##############
+## Make a pretty plot for Amygdala Seed region with FPl :
+ppi_Amy50seed<-subset(ppi_sub, seed=="Amy50")
+ppi_Amy50seed_fpl<-subset(ppi_Amy50seed, region == 'FS_FPl_highres')
+
+amyg_fpl_lmer<-lmer(beta~shock*control*epoch + (1|sub) + (1|run), ppi_Amy50seed_fpl)
+anova(amyg_fpl_lmer)
+emmeans(amyg_fpl_lmer, pairwise~control|epoch)
+effectsize::eta_squared(amyg_fpl_lmer, partial=TRUE) # get partial eta-squared values
+
+ppi_Amy50seed_avg<-ppi_Amy50seed_fpl %>%
+    group_by(sub, cope, shock, control) %>%
+    dplyr::summarise(avg = mean(beta), count = n(), .groups = 'drop') %>%as.data.frame()
+
+detach("package:dplyr", force = TRUE)  
+library(Rmisc)
+ppi_Amy50seed_avg_SE<- summarySEwithin(data=ppi_Amy50seed_avg, measurevar ='avg', betweenvars=NULL, withinvars=c('shock', 'control'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95)
+
+#ppi_Amy50seed_avg_SE <- within(ppi_Amy50seed_avg_SE, epoch <- relevel(epoch, ref = 'action'))
+#ppi_Amy50seed_avg_SE <- within(ppi_Amy50seed_avg_SE, epoch <- relevel(epoch, ref = 'context'))
+#epoch_labels <- c("context" = "Context Encoding Epoch", "action" = "Shock Anticipation Epoch")
+control_colors <- c("Mild" = "#e1e1e1", "Unpleasant" = "#f6cf77")  # Replace with actual levels and colors
+library(dplyr)
+dev.new()
+p <- ggplot(ppi_Amy50seed_avg_SE, aes(x = control, y = avg, fill = shock)) +
+  geom_bar(position=position_dodge(.65), size=0.65,  width=0.65, alpha = 0.8, color = "black", stat= "identity") +
+  geom_errorbar(position=position_dodge(.65),size=.5,width=.1,
+                color = "black",aes(ymin=avg-se, ymax=avg+se)) +
+  labs( x = "Condition", y = "Amygdala <-> FPl PPI\u03B2") +
+  scale_fill_manual(values = control_colors) + theme_classic(base_size = 14)+ scale_x_discrete(labels=c("Controllable", "Uncontrollable"))+scale_y_continuous(expand = c(0.05, 0.05)) +
+  theme(axis.title.x = element_text(size = 14),      # Font size for x-axis label
+        axis.title.y = element_text(size = 14),      # Font size for y-axis label
+        axis.text.x = element_text(size = 14),       # Font size for x-axis text
+        axis.text.y = element_text(size = 13),       # Font size for y-axis text
+        legend.position = "none") + #facet_wrap(vars(epoch), labeller = labeller(epoch = epoch_labels)) + 
+        theme_classic()
+cairo_pdf("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/ppi_clean/Amy50seed_FPL_PPI_pretty_noEpochs.pdf", height = 3.25, width = 4.35)
+print(p)
+dev.off()
+
+################
+## amyg with mid-LPFC
+ppi_Amy50seed<-subset(ppi_sub, seed=="Amy50")
+ppi_Amy50seed_946<-subset(ppi_Amy50seed, region == 'FS_9-46_highres')
+
+amyg_946_lmer<-lmer(beta~shock*control*epoch + (1|sub) + (1|run), ppi_Amy50seed_946)
+anova(amyg_946_lmer)
+emmeans(amyg_946_lmer, pairwise~control|epoch)
+# trending control ME : control F =  3.6208 p = 0.05714
+
+#################
+## amyg with PMd
+ppi_Amy50seed<-subset(ppi_sub, seed=="Amy50")
+ppi_Amy50seed_pmd<-subset(ppi_Amy50seed, region == 'FS_PMd_highres')
+
+amyg_pmd_lmer<-lmer(beta~shock*control*epoch + (1|sub) + (1|run), ppi_Amy50seed_pmd)
+anova(amyg_pmd_lmer)
+emmeans(amyg_pmd_lmer, pairwise~control|epoch)
+# control ME trending F =  3.3929 p = 0.06556
+```
+
+
+Great!
+Now, let's look at our RSA betas in relation to our PPI betas:
+```{r}
+ppi_rsa<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/rsa/PPI_RSA_betas.csv")
+ppi_rsa<-subset(ppi_rsa, outliers==0)
+ppi_rsa_sub<-subset(ppi_rsa, select=-c(ppi_beta_across.CP_UP,  Std..Error, t.value, Pr...t.., X))
+ppi_rsa_masks<-subset(ppi_rsa_sub, rsa_mask=="FS_FPl"|rsa_mask=="FS_9-46"|rsa_mask=="FS_PMd")
+ppi_rsa_masks<-subset(ppi_rsa_masks, region=="FS_FPl_highres"|region=="FS_9-46_highres"|region=="FS_PMd_highres")
+ppi_rsa_masks<-subset(ppi_rsa_masks, region=="FS_FPl_highres"|region=="FS_9-46_highres"|region=="FS_PMd_highres"| region == "FS_25_highres"|region=="FS_32_highres")
+
+ppi_rsa_masks<-subset(ppi_rsa_masks, rsa_epoch!="motorResponse")
+
+#####
+### Amygdala --> FPl Connectivity with FPl conjunctive Representations during the shock anticipation epoch
+myData <- subset(ppi_rsa_masks, seed == "Amy50" & region == "FS_FPl_highres" & rsa_mask == "FS_FPl" & epoch == "action" & rsa_epoch == "shockAnticipation" & term == "ixi_valence_rule")
+myData$Estimate<-myData$Estimate *-1 # multiply conjunctive reps by -1
+
+# We will just plot the Unpleasant - Mild delta for now 
+fit1<-lm(Estimate~ppi_um, myData)
+a<-anova(fit1)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+cor_result_fpl <- cor.test(myData$ppi_um , myData$Estimate)
+rho <- round(cor_result_fpl$estimate, 3)
+##########################  Plot FPl
+dev.new()
+cor_plot<-ggplot(myData, aes(x = ppi_um, y = Estimate)) +
+  geom_point(color = "#dc99eb", size = 1.5, alpha = 0.9) + geom_text(aes(x = Inf, y = Inf, label = paste("ρ = ", rho,"\n",  "p < 0.001 ", sep="")),hjust = 1.1, vjust = 1.5, size = 3.2, color = "#949494") + 
+  stat_smooth(method = "lm", color = "#d4a0df", size = 1, fill="#e1e1e1") +
+  labs(
+    y = "FPl RSA Beta \nThreat * Control",
+    x = "Amygdala      FPl Connectivity\n\u0394 Unpleasant \u2212 Mild")+
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0, 0.25), "cm")) +
+  scale_y_continuous(limits = c(-0.053, 0.08), # Set the limits
+        breaks = c(-0.04, 0, 0.04, 0.08))+
+  scale_x_continuous(limits = c(-1.45, 1.03), # Set the limits
+        breaks = c(-1.00, 0.00, 1.00), labels = label_number(accuracy = 0.01)) 
+cairo_pdf("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/ppi_clean/ppi_rsa/scatter_plots_pretty/corr_FPlIXI_AmygFplPPI_final.pdf",height=4, width=3.5)
+plot(cor_plot)
+dev.off()
+
+
+#####################
+### Now looking at mid-LPFC
+myData <- subset(ppi_rsa_masks, seed == "Amy50" & region == "FS_9-46_highres" & rsa_mask == "FS_9-46" & epoch == "action" & rsa_epoch == "shockAnticipation" & term == "ixi_valence_rule")
+myData$Estimate<-myData$Estimate *-1 # multiply conjunctive reps by -1
+myData<-subset(myData, sub!=28) # we can still see an extreme outlier
+
+#Test associations for all Unpleasant - Mild conditions:
+fit<-lm(Estimate~ppi_um, myData)
+anova(fit) # not significant, p = 0.887
+model_pvalue <- anova(fit)$`Pr(>F)`[1]
+
+fit2<-lm(Estimate~ppi_beta_across.UU_UP, myData)
+anova(fit2) # not significant p = 0.609
+
+fit3<-lm(Estimate~ppi_beta_across.CU_CP, myData)
+anova(fit3) #not significant p = 0.965 # 
+##########################mid-LPFC
+myData <- subset(ppi_rsa_masks, seed == "Amy50" & region == "FS_9-46_highres" & rsa_mask == "FS_9-46" & epoch == "action" & rsa_epoch == "shockAnticipation" & term == "ixi_valence_rule")
+myData$Estimate<-myData$Estimate *-1 # multiply conjunctive reps by -1
+myData<-subset(myData, sub!=28) # we can still see an extreme outlier
+
+fit1<-lm(Estimate~ppi_um, myData)
+a<-anova(fit1)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+cor_result_fpl <- cor.test(myData$ppi_um , myData$Estimate)
+rho <- round(cor_result_fpl$estimate, 3)
+##########################  Plot FPl
+dev.new()
+cor_plot<-ggplot(myData, aes(x = ppi_um, y = Estimate)) +
+  geom_point(color = "#99c1eb", size = 1.5, alpha = 0.9) + geom_text(aes(x = Inf, y = Inf, label = paste("ρ = ", rho,"\n",  "p = ", p_value, sep="")),hjust = 1.1, vjust = 1.5, size = 3.2, color = "#949494") + 
+  stat_smooth(method = "lm", color = "#99c1eb", size = 1, fill="#e1e1e1") +
+  labs(
+    y = "mid-LPFC RSA Beta \nThreat * Control",
+    x = "Amygdala      mid-LPFC Connectivity\n\u0394 Unpleasant \u2212 Mild")+
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0, 0.25), "cm")) +
+  scale_y_continuous(limits = c(-0.048, 0.055), # Set the limits
+        breaks = c(-0.04, -0.02, 0.0, 0.02,0.04))+
+  scale_x_continuous(limits = c(-1.15, 0.8), # Set the limits
+        breaks = c(-1.00, -0.50, 0.00, 0.50), labels = label_number(accuracy = 0.01)) 
+cairo_pdf("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/ppi_clean/ppi_rsa/scatter_plots_pretty/corr_midLPFCIXI_AmygmidLPFCPPI_final.pdf",height=4, width=3.5)
+plot(cor_plot)
+dev.off()
+
+
+##########################
+## PMd
+myData <- subset(ppi_rsa_masks, seed == "Amy50" & region == "FS_PMd_highres" & rsa_mask == "FS_PMd" & epoch == "action" & rsa_epoch == "shockAnticipation" & term == "ixi_valence_rule")
+myData$Estimate<-myData$Estimate *-1 # multiply conjunctive reps by -1
+
+#Test associations for all Unpleasant - Mild conditions:
+fit<-lm(Estimate~ppi_um, myData)
+anova(fit) # not significant, p = 0.676
+model_pvalue <- anova(fit)$`Pr(>F)`[1]
+
+fit2<-lm(Estimate~ppi_beta_across.UU_UP, myData)
+anova(fit2) # not significant p = 0.403
+
+fit3<-lm(Estimate~ppi_beta_across.CU_CP, myData)
+anova(fit3) #not significant p = 0.421
+
+##########################
+fit1<-lm(Estimate~ppi_um, myData)
+a<-anova(fit1)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+cor_result_fpl <- cor.test(myData$ppi_um , myData$Estimate)
+rho <- round(cor_result_fpl$estimate, 3)
+##########################  Plot FPl
+dev.new()
+cor_plot<-ggplot(myData, aes(x = ppi_um, y = Estimate)) +
+  geom_point(color = "#9ed4b8", size = 1.5, alpha = 0.9) + geom_text(aes(x = Inf, y = Inf, label = paste("ρ = ", rho,"\n",  "p = ", p_value, sep="")),hjust = 1.1, vjust = 1.5, size = 3.2, color = "#949494") + 
+  stat_smooth(method = "lm", color = "#9ed4b8", size = 1, fill="#e1e1e1") +
+  labs(
+    y = "PMd RSA Beta \nThreat * Control",
+    x = "Amygdala      PMd Connectivity\n\u0394 Unpleasant \u2212 Mild")+
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0, 0.25), "cm")) +
+  scale_y_continuous(limits = c(-0.07, 0.125), # Set the limits
+        breaks = c(-0.05, 0.0, 0.05, 0.10))+
+  scale_x_continuous(limits = c(-0.81, 0.8), # Set the limits
+        breaks = c(-0.60, 0.00, 0.60), labels = label_number(accuracy = 0.01)) 
+cairo_pdf("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/ppi_clean/ppi_rsa/scatter_plots_pretty/corr_PMdIXI_AmygPMdPPI_final.pdf",height=4, width=3.5)
+plot(cor_plot)
+dev.off()
+
+################
+## test amyg - midLPFC and amyg- PMD coupling with FPl conjunctive reps
+##### FS_PMd_highres FS_9-46_highres
+### Amygdala --> FPl Connectivity with FPl conjunctive Representations during the shock anticipation epoch
+myData <- subset(ppi_rsa_masks, seed == "Amy50" & region == "FS_PMd_highres" & rsa_mask == "FS_FPl" & epoch == "action" & rsa_epoch == "shockAnticipation" & term == "ixi_valence_rule")
+myData$Estimate<-myData$Estimate *-1 # multiply conjunctive reps by -1
+
+#Test associations for all Unpleasant - Mild conditions:
+fit1<-lm(Estimate~ppi_um, myData)
+anova(fit1) 
+cor_result_fpl <- cor.test(myData$ppi_um , myData$Estimate)
+rho <- round(cor_result_fpl$estimate, 3)
+model_pvalue <- anova(fit1)$`Pr(>F)`[1]
+
+##
+##### FS_PMd_highres FS_9-46_highres
+### Amygdala --> FPl Connectivity with FPl conjunctive Representations during the shock anticipation epoch
+myData <- subset(ppi_rsa_masks, seed == "Amy50" & region == "FS_9-46_highres" & rsa_mask == "FS_FPl" & epoch == "action" & rsa_epoch == "shockAnticipation" & term == "ixi_valence_rule")
+myData$Estimate<-myData$Estimate *-1 # multiply conjunctive reps by -1
+fit1<-lm(Estimate~ppi_um, myData)
+anova(fit1) 
+cor_result_fpl <- cor.test(myData$ppi_um , myData$Estimate)
+cor_result_fpl
+
+```
+
+
+Test the difference of the correlation coefficients, we'll only look at the conjunctive RSA beta for the Unpleasant - Mild ppi:
+```{r}
+library("cocor")
+ppi_rsa<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/rsa/PPI_RSA_betas.csv")
+ppi_rsa<-subset(ppi_rsa, outliers==0 & seed == "Amy50" & epoch == "action" & rsa_epoch == "shockAnticipation"& term =="ixi_valence_rule" )
+ppi_rsa_sub<-subset(ppi_rsa, select=-c(ppi_beta_across.CP_UP,  Std..Error, t.value, Pr...t.., X, ppi_beta_across.CU_UU, ppi_beta_across.UU_UP,ppi_cu,ppi_beta_across.CU_CP, X.1))
+ppi_rsa_masks<-subset(ppi_rsa_sub, rsa_mask=="FS_FPl"|rsa_mask=="FS_9-46"|rsa_mask=="FS_PMd")
+ppi_rsa_masks<-subset(ppi_rsa_masks, region=="FS_FPl_highres"|region=="FS_9-46_highres"|region=="FS_PMd_highres")
+
+#FPl correlation
+myData_FPl <- subset(ppi_rsa_masks,region == "FS_FPl_highres" & rsa_mask == "FS_FPl")
+myData_FPl$Estimate_FPl<-myData_FPl$Estimate *-1 # multiply conjunctive reps by -1
+myData_FPl$ppi_FPlAmy<-myData_FPl$ppi_um
+myData_FPl<-subset(myData_FPl, select=-c(region, seed, epoch, ppi_um, Estimate, rsa_mask, rsa_epoch, term, outliers))
+
+#mid-LPFC correlation
+myData_mLPFC <- subset(ppi_rsa_masks,  region == "FS_9-46_highres" & rsa_mask == "FS_9-46" )
+myData_mLPFC$Estimate_mLPFC<-myData_mLPFC$Estimate *-1 # multiply conjunctive reps by -1
+myData_mLPFC<-subset(myData_mLPFC, sub!=28) # we can still see an extreme outlier
+myData_mLPFC$ppi_mLPFCAmy<-myData_mLPFC$ppi_um
+myData_mLPFC<-subset(myData_mLPFC, select=-c(region, seed, epoch, ppi_um, Estimate, rsa_mask, rsa_epoch, term, outliers))
+
+#PMd correlation:
+myData_PMd <- subset(ppi_rsa_masks, region == "FS_PMd_highres" & rsa_mask == "FS_PMd" )
+myData_PMd$Estimate_PMd<-myData_PMd$Estimate *-1 # multiply conjunctive reps by -1
+myData_PMd$ppi_PMdAmy<-myData_PMd$ppi_um
+myData_PMd<-subset(myData_PMd, select=-c(region, seed, epoch, ppi_um, Estimate, rsa_mask, rsa_epoch, term, outliers))
+betas1<-left_join(myData_PMd, myData_FPl,by=c("sub"))
+betas<-left_join(myData_mLPFC,betas1,by=c("sub"))
+
+betaList<-list()
+betaList$PFC <- betas
+
+# Compare two correlations 
+# The correlations are non-overlapping
+cocor(~ppi_FPlAmy + Estimate_FPl | ppi_mLPFCAmy + Estimate_mLPFC, betaList$PFC)
+library(cocor)
+
+# Your comparison (same sample; pairs share no variable)
+cc <- cocor(~ ppi_FPlAmy + Estimate_FPl | ppi_mLPFCAmy + Estimate_mLPFC,
+            data = betaList$PFC)
+# Cohen's q (effect size): compute from the data
+r1 <- with(betaList$PFC, cor(ppi_FPlAmy,   Estimate_FPl,   use = "pairwise.complete.obs"))
+r2 <- with(betaList$PFC, cor(ppi_mLPFCAmy, Estimate_mLPFC, use = "pairwise.complete.obs"))
+q  <- atanh(r1) - atanh(r2)
+q_mag <- cut(abs(q),
+             breaks = c(0, .1, .3, .5, Inf),
+             labels = c("trivial","small","medium","large"),
+             right = FALSE)
+list(r1 = r1, r2 = r2, q = q, magnitude = q_mag)
+
+cocor(~ppi_FPlAmy + Estimate_FPl | ppi_PMdAmy + Estimate_PMd, betaList$PFC)
+cocor(~ppi_FPlAmy + Estimate_FPl | ppi_mLPFCAmy + Estimate_mLPFC, betaList$PFC)
+cocor(~ppi_FPlAmy + Estimate_FPl | ppi_PMdAmy + Estimate_PMd, betaList$PFC)
+
+####
+# Compare two correlations based on two depenendent groups
+# The correlations are overlapping
+cocor(~um_contextPMd + um_emo | um_contextFPl + um_emo, betaList$PFC) # p > 0.119
+cocor(~um_contextFPl + um_emo | um_context946 + um_emo, betaList$PFC) # p > 0.63
+cocor(~um_contextPMd + um_emo | um_context946 + um_emo, betaList$PFC)
+
+#cocor(~knowledge + intelligence.a | logic + intelligence.a, aptitude$sample1)
+#cocor(~knowledge + intelligence.a | logic + intelligence.a, aptitude$sample2)
+```
+

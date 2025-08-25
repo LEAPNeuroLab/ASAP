@@ -1,0 +1,611 @@
+#%%
+---
+output: reprex::reprex_document
+knit: reprex::reprex_render
+---
+PFC Paper- J.Stasiak & R. Lapate 2024
+RSA Analyses
+Read in featquery data that uses freesurfer ROIs from FIR model
+
+```{r}
+rm(list=ls(all=TRUE)) 
+library(ggplot2)
+library(reshape2)
+library(nlme)
+library(psych)
+library(car)
+library(languageR)
+library(gdata)
+library(scales)
+library(doBy)
+library(grid)
+require(grid)
+library(stringr)
+library(plyr)
+library(ppcor)
+library(tidyr)
+library(gtools)
+library(dplyr)
+library(ez)
+library(lambda.tools)
+library(MASS)
+library(sfsmisc)
+library(broom)
+# library(tidystats)
+library(broom.mixed)
+library(tidymodels)
+library(wesanderson)
+library(lme4)
+library(lmerTest)
+
+# to grab SE scripts
+pathnames <- list.files(pattern="[.]R$", path="/Users/lapate/Dropbox/Rfunctions/", full.names=TRUE);
+sapply(pathnames, FUN=source);
+# display colors
+library("RColorBrewer")
+display.brewer.all()
+brewer.pal(n = 11, name = "Spectral")
+
+# return a function responpsible for formatting the axis labels with a given number of decimals 
+fmt_dcimals <- function(decimals=0){
+  function(x) as.character(round(x,decimals))
+}
+
+
+mydotPlot_y <- function (data, fname, xvar, yvar, myFill,ylabel, ymin=".", ymax=".",height=4, width=3) {
+  ggplot(data, aes_string(x=xvar, y=yvar, fill=myFill)) + #for original purple and green:colour=myFill, group=myFill
+    geom_bar(position=position_dodge(.5), size=1,  width=0.25, fill='white', stat= "identity",color="#b3b3b3") + #remove color for original purple and green
+    geom_hline(yintercept=0, color='grey', alpha=.4)+ #,linetype = "longdash"
+    geom_errorbar(position=position_dodge(width=.2), width=.15, size= .5,aes(ymin=CI1, ymax=CI2))+ # width=.15, size= .5 position=position_dodge(.5)?
+    geom_point(size = 3,colour="#fc8d62", fill="#fc8d62")+ #position=position_dodge(width=.2)
+    ylab(ylabel)+
+    coord_cartesian(ylim = c(ymin,ymax))+
+    theme_classic(base_size=14)  +
+    theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+    theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+    theme(axis.text.x = element_text(size=rel(1.2)))+
+    theme(axis.text.y = element_text(size=rel(1)))+ 
+    theme(axis.title.x = element_blank())+
+    theme(legend.position = "none") +
+    ggsave(fname,height=height, width=width, dpi=300,device=cairo_pdf)  
+}  
+
+mydotPlot_y_nice_all <- function (data, fname_pdf, xvar, yvar, myFill, ylabel, facetGridVar1=".", facetGridVar2, labels_vect, CImin, CImax, plot_title, dotColor, fillColor) {
+  ggplot(data, aes_string(x = xvar, y = yvar, fill = myFill)) +
+    geom_bar(position = position_dodge(.3), width = 0.325, fill = 'white', stat = "identity", color = "#a8a8a8") +
+    geom_hline(yintercept = 0, color = 'grey', alpha = .5) +
+    geom_errorbar(position = position_dodge(width = .3), width = .175, color = "#b3b3b3", aes(ymin = CI1, ymax = CI2)) +
+    geom_point(size = 3.5, colour = dotColor, fill = fillColor) +
+    ylab(ylabel) +
+    coord_cartesian(ylim = c(CImin, CImax)) +
+    facet_grid(reformulate(facetGridVar2, facetGridVar1), switch = "x", scales = "free_x", space = "free_x") +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.title.y = element_text(size = rel(1), angle = 90, vjust = 1),
+      axis.title.x = element_text(size = rel(1), angle = 0, vjust = 1.7),
+      axis.text.x = element_text(size = 10),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text(size = 12, hjust = 0.5),
+      legend.position = "none",
+      panel.spacing = unit(1, "lines"),
+      strip.background = element_blank(),
+      strip.placement = "outside",
+      strip.text = element_text(vjust = 1.5, size = 12, color = "#4D4D4D", face = "bold")
+    ) +
+    scale_y_continuous(labels = fmt_dcimals(3), breaks = scales::pretty_breaks(n = 3)) +
+    scale_x_discrete(expand = c(.01, .50), name="", labels = labels_vect)+
+  #  geom_text(aes(y = CImax, label = paste0("\n", significance)),
+   #           vjust = -0.5, size = 3, color = "black") + # Added second text layer for significance
+    xlab(NULL) +
+    ggtitle(plot_title)
+ 
+  ggsave(fname_pdf, height = 4, width = 6.75, dpi = 300, device = cairo_pdf)  
+}
+
+
+mydotPlot_y_wrap <- function (data, fname, xvar, yvar, myFill,ylabel, facetGridVar1=".", facetGridVar2,ymin=".", ymax=".") {
+  ggplot(data, aes_string(x=xvar, y=yvar, fill=myFill)) + #, colour=myFill, group=myFill)
+    geom_bar(position=position_dodge(.5), size=.75,  width=0.25, fill='white', stat= "identity",color="#b3b3b3") +
+    geom_hline(yintercept=0, color='grey', alpha=.4)+ #,linetype = "longdash"
+    geom_errorbar(position=position_dodge(width=.2), width=.15, size= .5,aes(ymin=CI1, ymax=CI2))+ # width=.15, size= .5 position=position_dodge(.5)?
+    geom_point(size = 3,colour="#fc8d62", fill="#fc8d62")+ #position=position_dodge(width=.2)
+    ylab(ylabel)+
+    coord_cartesian(ylim = c(ymin,ymax))+
+    facet_grid(reformulate(facetGridVar2,facetGridVar1),switch = "x", scales = "free_x", space = "free_x" )+
+    theme_classic(base_size=14.5)  +
+    theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1))+
+    theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=1.7))+ # to make it further away:  vjust=-.5
+    theme(axis.text.x = element_text(size=rel(.9)))+ # left justity ,,hjust = .6
+    theme(axis.text.y = element_text(size=rel(1)))+ 
+    theme(legend.position = "none") +
+    scale_y_continuous(labels = fmt_dcimals(3), breaks = scales::pretty_breaks(n = 3) )+
+    scale_x_discrete(expand = c(.01,.50),name="",labels = c("β Action","β Emotion","β Emotion*Action"))+ #expand= c(.05,.55),0.07, .3
+    theme(panel.spacing = unit(0, "lines"), # if -1 no space; 0 here then there's a tiny space between categories
+          strip.background = element_blank(),
+          strip.placement = "outside", strip.text=element_text(vjust=4, size = 12, color = "grey30", face = "bold")) + # 
+    theme(strip.background = element_blank(),strip.text.x = element_blank())+
+    ggsave(fname,height=3.6, width=5.75, dpi=300,device=cairo_pdf)  #  height 3.5
+} 
+
+mydotPlot_y_wrap <- function (data, fname, xvar, yvar, myFill, ylabel, facetGridVar1=".", facetGridVar2, ymin=".", ymax=".") {
+  ggplot(data, aes_string(x=xvar, y=yvar, fill=myFill)) + #, colour=myFill, group=myFill)
+    geom_bar(position=position_dodge(.5), size=.75,  width=0.25, fill='white', stat= "identity", color="#b3b3b3") +
+    geom_hline(yintercept=0, color='grey', alpha=.4)+ #,linetype = "longdash"
+    geom_errorbar(position=position_dodge(width=.2), width=.15, size= .5, aes(ymin=CI1, ymax=CI2)) + # width=.15, size= .5 position=position_dodge(.5)?
+    geom_point(size = 3,colour="#fc8d62", fill="#fc8d62")+ #position=position_dodge(width=.2)
+    ylab(ylabel) +
+    coord_cartesian(ylim = c(ymin,ymax)) +
+    facet_grid(reformulate(facetGridVar2,facetGridVar1),switch = "x", scales = "free_x", space = "free_x" ) +
+    theme_classic(base_size=14.5)  +
+    theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1)) +
+    theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=1.7)) + # to make it further away:  vjust=-.5
+    theme(axis.text.x = element_text(size=rel(.9))) + # left justify ,,hjust = .6
+    theme(axis.text.y = element_text(size=rel(1))) + 
+    theme(legend.position = "none") +
+    scale_y_continuous(labels = fmt_dcimals(3), breaks = scales::pretty_breaks(n = 3)) +
+    scale_x_discrete(expand = c(.01,.50), name="", labels = c("β Action","β Emotion","β Emotion*Action")) + #expand= c(.05,.55),0.07, .3
+    theme(panel.spacing = unit(0, "lines"), # if -1 no space; 0 here then there's a tiny space between categories
+          strip.background = element_blank(),
+          strip.placement = "outside", strip.text=element_text(vjust=4, size = 12, color = "grey30", face = "bold")) + # 
+    theme(strip.background = element_blank(),strip.text.x = element_blank())
+}
+
+myScatterPlot <- function (data, fname, xvar, yvar, xlabel,ylabel, plotTitle="", fname_png, fname_pdf) {
+  if(NROW(data)>3){
+    rvalueSP=with(data, cor.test(get(xvar),get(yvar), use = "complete.obs", method="spearman", exact = FALSE))
+    rvalue=with(data, cor.test(get(xvar),get(yvar), use = "complete.obs"))
+    ggplot(data, aes_string(x=xvar, y=yvar)) + 
+      geom_point(shape=19,  size = 2, colour="black") + 
+      geom_smooth(method=lm, colour="black", size = 1.25 ) + # Add linear regression lines #999999
+      theme_classic(base_size=13.5)+ #gray or bw # original 15
+      xlab(xlabel) + 
+      ylab(ylabel) +  
+      annotate("text", size= 2.5, x=Inf, y = Inf, label =paste("ρ = ", round(as.numeric(rvalueSP[4]), digits=2), ", p = ", round(as.numeric(rvalueSP[3]), digits=3), ", n = ", round(as.numeric(rvalue[2])+2, digits=2)),colour = "black",vjust=1, hjust=1)   +
+      theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank(),panel.background=element_blank())
+    ggsave(fname,height=4, width=4, dpi=300,device=cairo_pdf)
+  }
+}
+
+plot_spearman_corr <- function(data, xcol, ycol, xlab, ylab, pt_color, line_color, se_color, fname_png, fname_pdf) {
+  data <- data.frame(
+    myX = data[[xcol]],
+    myY = data[[ycol]]
+  )
+ 
+  # Compute Spearman's correlation
+  spearman_cor <- cor.test(data$myX, data$myY, method = "spearman")
+  rho <- round(spearman_cor$estimate, 2)
+  p_value <- round(spearman_cor$p.value, 2)
+  n <- as.integer(nrow(data))
+  ymin <- min(data$myY, na.rm=T)
+  ymax <- max(data$myY, na.rm=T)
+ 
+  # Create the plot
+  p <- ggplot(data, aes(x = myX, y = myY)) +
+    labs(x = xlab, y = ylab) +
+    # scale_size_manual(values = c(15)) +
+    coord_cartesian(ylim = c(ymin, ymax*1.1)) +
+    geom_smooth(method = lm, color = line_color, fill = se_color) +
+    geom_point(color = pt_color) +
+    geom_text(
+      aes(x = Inf, y = Inf, label = paste("ρ = ", rho, ", p = ", p_value, ", n = ", n, sep="")),
+      hjust = 1.1, vjust = 2, size = 3, color = "black"
+    ) +
+    theme_classic() +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(size = 10),
+      axis.text.y = element_text(size = 10),
+      text = element_text(size = 12)
+    )
+ 
+  # Save the plot
+  ggsave(fname_png, plot = p, width = 4, height = 4, dpi = 300)
+  ggsave(fname_pdf, plot = p, width = 4, height = 4, dpi = 300, device = cairo_pdf)
+  return(p)
+}
+```
+
+
+Fit the RSA model per epoch, per region. Then plot so we can visualize the betas
+```{r}
+df_marked_outliers<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/rsa/rsaBetas_outliers_sd.csv")
+df_noOutliers<-subset(df_marked_outliers, outlier3_5sd==0)
+# removing extra outliers based on scatter plot spreads of data 
+
+############################## FPl ################################
+df_noOutliers_fpl_actionPrep<-subset(df_noOutliers, mask=='FS_FPl' &epoch== "actionPrep"&outlier_3sd==0)
+df_noOutliers_fpl_contextSetting<-subset(df_noOutliers, mask=='FS_FPl' &epoch== "goal"&outlier_3sd==0)
+
+#first test the context-setting epoch
+plot_model(Fit2, type="re")
+Fit2 <-  lmer(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule + (1+rule+rule_consistent+ valence+valence_consistent+ixi_valence_rule| sub), REML = FALSE, data = df_noOutliers_fpl_contextSetting)
+anova(Fit2)
+effectsize::eta_squared(Fit2, partial=TRUE) # get partial eta-squared values
+
+t1 <- tidy(Fit2, effects = c("fixed"))
+t1[2, "estimate"] <- t1[2, "estimate"] * -1 
+t1[6, "estimate"] <- t1[6, "estimate"] * -1
+t1$CI1 <- t1$estimate - (1.96 * t1$std.error)
+t1$CI2 <- t1$estimate + (1.96 * t1$std.error)
+t1_redux <- t1[2:6,]
+
+t1_redux$term <- factor(t1_redux$term, levels = c( 'valence_consistent','rule_consistent','valence', 'rule', 'ixi_valence_rule'))
+t1_redux$category <- c("Discrimination", "Similarity", "Discrimination", "Similarity", "Discrimination")
+t1_redux$category <- as.factor(t1_redux$category)
+t1_redux$category <- reorder.factor(t1_redux$category, new.order = c("Similarity", "Discrimination"))
+labels_vect <- c("\u03B2 Threat", "\u03B2 Control", "\u03B2 Threat*Control")
+fname_pdf <- '/Volumes/labshare/Joanne/ASAP/RSA/epochs/RSAstructure/figures/contextSetting_FPl_inverse.pdf'
+mydotPlot_y_nice_all(t1_redux, fname_pdf, "term", "estimate", "term", "Estimate", facetGridVar1 = ".", "category", labels_vect, CImin = -0.02, CImax = 0.015, dotColor="#dc99eb", plot_title='', fillColor="#dc99eb")
+
+#now test shock anticipation epoch
+Fit1 <-  lmer(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule + (1+rule+rule_consistent+ valence+valence_consistent+ixi_valence_rule| sub), REML = FALSE, data = df_noOutliers_fpl_actionPrep)
+anova(Fit1)
+effectsize::eta_squared(Fit1, partial=TRUE) # get partial eta-squared values
+
+t1 <- tidy(Fit1, effects = c("fixed"))
+t1[2, "estimate"] <- t1[2, "estimate"] * -1 
+t1[6, "estimate"] <- t1[6, "estimate"] * -1
+t1$CI1 <- t1$estimate - (1.96 * t1$std.error)
+t1$CI2 <- t1$estimate + (1.96 * t1$std.error)
+t1_redux <- t1[2:6,]
+
+t1_redux$term <- factor(t1_redux$term, levels = c( 'valence_consistent','rule_consistent','valence', 'rule', 'ixi_valence_rule'))
+t1_redux$category <- c("Discrimination", "Similarity", "Discrimination", "Similarity", "Discrimination")
+t1_redux$category <- as.factor(t1_redux$category)
+t1_redux$category <- reorder.factor(t1_redux$category, new.order = c("Similarity", "Discrimination"))
+labels_vect <- c("\u03B2 Threat", "\u03B2 Control", "\u03B2 Threat*Control")
+fname_pdf <- sprintf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/%s_%s_inverse.pdf', "shock_anticipation", "FPl")
+mydotPlot_y_nice_all(t1_redux, fname_pdf, "term", "estimate", "term", "Estimate", facetGridVar1 = ".", "category", labels_vect, CImin = -0.02, CImax = 0.015, dotColor="#dc99eb", plot_title='', fillColor="#dc99eb")
+
+############################## midLPFC ################################
+# removing extra outliers based on scatter plot spreads of data 
+df_noOutliers_946_actionPrep<-subset(df_noOutliers, mask=='FS_9-46' &epoch== "actionPrep"&outlier_3sd==0)
+df_noOutliers_946_contextSetting<-subset(df_noOutliers, mask=='FS_9-46' &epoch== "goal"&outlier_3sd==0)
+
+##
+Fit3 <-  lmer(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule + (1+rule+rule_consistent+ valence+valence_consistent+ixi_valence_rule| sub), REML = FALSE, data = df_noOutliers_946_actionPrep)
+anova(Fit3)
+effectsize::eta_squared(Fit3, partial=TRUE) # get partial eta-squared values
+
+t1 <- tidy(Fit3, effects = c("fixed"))
+t1[2, "estimate"] <- t1[2, "estimate"] * -1 
+t1[6, "estimate"] <- t1[6, "estimate"] * -1
+t1$CI1 <- t1$estimate - (1.96 * t1$std.error)
+t1$CI2 <- t1$estimate + (1.96 * t1$std.error)
+t1_redux <- t1[2:6,]
+
+t1_redux$term <- factor(t1_redux$term, levels = c( 'valence_consistent','rule_consistent','valence', 'rule', 'ixi_valence_rule'))
+t1_redux$category <- c("Discrimination", "Similarity", "Discrimination", "Similarity", "Discrimination")
+t1_redux$category <- as.factor(t1_redux$category)
+t1_redux$category <- reorder.factor(t1_redux$category, new.order = c("Similarity", "Discrimination"))
+labels_vect <- c("\u03B2 Threat", "\u03B2 Control", "\u03B2 Threat*Control")
+fname_pdf <-'/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/shock_anticipation_midLPFC_inverse.pdf'
+mydotPlot_y_nice_all(t1_redux, fname_pdf, "term", "estimate", "term", "Estimate", facetGridVar1 = ".", "category", labels_vect, CImin = -0.02, CImax = 0.015, dotColor="#99c1eb", plot_title='', fillColor="#99c1eb")
+
+###testing context encoding epoch
+Fit4 <-  lmer(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule + (1+rule+rule_consistent+ valence+valence_consistent+ixi_valence_rule| sub), REML = FALSE, data = df_noOutliers_946_contextSetting)
+anova(Fit4)
+effectsize::eta_squared(Fit4, partial=TRUE) # get partial eta-squared values
+t1 <- tidy(Fit4, effects = c("fixed"))
+t1[2, "estimate"] <- t1[2, "estimate"] * -1 
+t1[6, "estimate"] <- t1[6, "estimate"] * -1
+t1$CI1 <- t1$estimate - (1.96 * t1$std.error)
+t1$CI2 <- t1$estimate + (1.96 * t1$std.error)
+t1_redux <- t1[2:6,]
+
+t1_redux$term <- factor(t1_redux$term, levels = c( 'valence_consistent','rule_consistent','valence', 'rule', 'ixi_valence_rule'))
+t1_redux$category <- c("Discrimination", "Similarity", "Discrimination", "Similarity", "Discrimination")
+t1_redux$category <- as.factor(t1_redux$category)
+t1_redux$category <- reorder.factor(t1_redux$category, new.order = c("Similarity", "Discrimination"))
+labels_vect <- c("\u03B2 Threat", "\u03B2 Control", "\u03B2 Threat*Control")
+fname_pdf <-'/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/context_setting_midLPFC_inverse.pdf'
+mydotPlot_y_nice_all(t1_redux, fname_pdf, "term", "estimate", "term", "Estimate", facetGridVar1 = ".", "category", labels_vect, CImin = -0.02, CImax = 0.015, dotColor="#99c1eb", plot_title='', fillColor="#99c1eb")
+
+################################################## PMd ##################################################
+df_noOutliers_pmd_actionPrep<-subset(df_noOutliers, mask=='FS_PMd' &epoch== "actionPrep"&outlier_3sd==0)
+df_noOutliers_pmd_contextSetting<-subset(df_noOutliers, mask=='FS_PMd' &epoch== "goal"&outlier_3sd==0)
+
+Fit5 <-  lmer(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule + (1+rule+rule_consistent+ valence+valence_consistent+ixi_valence_rule| sub), REML = FALSE, data = df_noOutliers_pmd_contextSetting)
+anova(Fit5)
+effectsize::eta_squared(Fit5, partial=TRUE) # get partial eta-squared values
+t1 <- tidy(Fit5, effects = c("fixed"))
+t1[2, "estimate"] <- t1[2, "estimate"] * -1 
+t1[6, "estimate"] <- t1[6, "estimate"] * -1
+t1$CI1 <- t1$estimate - (1.96 * t1$std.error)
+t1$CI2 <- t1$estimate + (1.96 * t1$std.error)
+t1_redux <- t1[2:6,]
+
+t1_redux$term <- factor(t1_redux$term, levels = c( 'valence_consistent','rule_consistent','valence', 'rule', 'ixi_valence_rule'))
+t1_redux$category <- c("Discrimination", "Similarity", "Discrimination", "Similarity", "Discrimination")
+t1_redux$category <- as.factor(t1_redux$category)
+t1_redux$category <- reorder.factor(t1_redux$category, new.order = c("Similarity", "Discrimination"))
+labels_vect <- c("\u03B2 Threat", "\u03B2 Control", "\u03B2 Threat*Control")
+fname_pdf <-'/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/shock_anticipation_PMd_inverse.pdf'
+mydotPlot_y_nice_all(t1_redux, fname_pdf, "term", "estimate", "term", "Estimate", facetGridVar1 = ".", "category", labels_vect, CImin = -0.02, CImax = 0.015, dotColor="#9ed4b8", plot_title='', fillColor="#9ed4b8")
+
+###
+Fit6 <-  lmer(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule + (1+rule+rule_consistent+ valence+valence_consistent+ixi_valence_rule| sub), REML = FALSE, data = df_noOutliers_pmd_actionPrep)
+anova(Fit6)
+effectsize::eta_squared(Fit6, partial=TRUE) # get partial eta-squared values
+t1 <- tidy(Fit6, effects = c("fixed"))
+t1[2, "estimate"] <- t1[2, "estimate"] * -1 
+t1[6, "estimate"] <- t1[6, "estimate"] * -1
+t1$CI1 <- t1$estimate - (1.96 * t1$std.error)
+t1$CI2 <- t1$estimate + (1.96 * t1$std.error)
+t1_redux <- t1[2:6,]
+t1_redux$term <- factor(t1_redux$term, levels = c( 'valence_consistent','rule_consistent','valence', 'rule', 'ixi_valence_rule'))
+t1_redux$category <- c("Discrimination", "Similarity", "Discrimination", "Similarity", "Discrimination")
+t1_redux$category <- as.factor(t1_redux$category)
+t1_redux$category <- reorder.factor(t1_redux$category, new.order = c("Similarity", "Discrimination"))
+labels_vect <- c("\u03B2 Threat", "\u03B2 Control", "\u03B2 Threat*Control")
+fname_pdf <-'/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/context_setting_PMd_inverse.pdf'
+mydotPlot_y_nice_all(t1_redux, fname_pdf, "term", "estimate", "term", "Estimate", facetGridVar1 = ".", "category", labels_vect, CImin = -0.02, CImax = 0.015, dotColor="#9ed4b8", plot_title='', fillColor="#9ed4b8")
+```
+
+Now let's get RSA betas to run correlations on:
+
+```{r}
+# Initialize a list to store models for each subject
+subject_models <- list()
+coefficients_df_context <- data.frame()
+
+myDataStructure_regions_shockAnticipation<-subset(df_noOutliers, epoch=='actionPrep')
+myDataStructure_regions_contextSet<-subset(df_noOutliers, epoch=='goal')
+masks <- unique(df_noOutliers$mask)
+
+for (maskVar in masks) {
+    mask_data <- subset(myDataStructure_regions_contextSet, mask == maskVar)
+    subjectz <- unique(mask_data$sub)
+    for (subject in subjectz) {
+        subject_data <- subset(mask_data, sub == subject)
+        model <- lm(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule, data = subject_data)
+        coefficients <- summary(model)$coefficients
+        coefficients_df_subject <- as.data.frame(coefficients)
+        coefficients_df_subject$sub <- subject
+        coefficients_df_subject$mask <- maskVar
+        coefficients_df_subject$epoch <- "contextSetting"
+        coefficients_df_subject$term <- rownames(coefficients_df_subject)
+        coefficients_df_context <- rbind(coefficients_df_context, coefficients_df_subject)
+    }
+}
+
+################################
+## 
+coefficients_df_shockAnticipation <- data.frame()
+masks <- unique(myDataStructure_regions_shockAnticipation$mask)
+
+for (maskVar in masks) {
+    mask_data <- subset(myDataStructure_regions_shockAnticipation, mask == maskVar)
+    subjectz <- unique(mask_data$sub)
+    for (subject in subjectz) {
+        subject_data <- subset(mask_data, sub == subject)
+        model <- lm(corr ~ rule + rule_consistent + valence + valence_consistent + ixi_valence_rule, data = subject_data)
+        coefficients <- summary(model)$coefficients
+        coefficients_df_subject <- as.data.frame(coefficients)
+        coefficients_df_subject$sub <- subject
+        coefficients_df_subject$mask <- maskVar
+        coefficients_df_subject$epoch <- "shockAnticipation"
+        coefficients_df_subject$term <- rownames(coefficients_df_subject)
+        coefficients_df_shockAnticipation <- rbind(coefficients_df_shockAnticipation, coefficients_df_subject)
+    }   
+}
+coefficients_df_all <- rbind(coefficients_df_context, coefficients_df_shockAnticipation)
+
+write.csv(coefficients_df_all, file = "/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/data/neuro/rsa/acrossSubject_rsaBetas_contextSet_shockAntic_Epochs_noOutliers.csv", row.names = FALSE)
+```
+
+
+Test for regional specificity of the interaction coding:
+```{r}
+df_marked_outliers<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/rsa/rsaBetas_outliers_sd.csv")
+df_noOutliers<-subset(df_marked_outliers, outlier3_5sd==0&outlier_3sd==0)
+df_marked_outliers_0<-subset(df_noOutliers, mask=='FS_FPl'|mask=='FS_9-46'|mask=='FS_PMd')
+df_marked_outliers_0$mask <- factor(df_marked_outliers_0$mask)
+df_marked_outliers_0 <- within(df_marked_outliers_0, mask <- relevel(mask, ref = 'FS_FPl'))
+df_marked_outliers_contextSet<-subset(df_marked_outliers_0, epoch=='goal')
+df_marked_outliers_actionPrep<-subset(df_marked_outliers_0, epoch=='actionPrep')
+
+Fit2_contextSetting <-lmer(corr ~ rule+rule_consistent+valence+valence_consistent+ixi_valence_rule+ mask+mask*rule+mask*valence+mask*ixi_valence_rule+(1+rule+rule_consistent+valence+valence_consistent+ixi_valence_rule+ mask|sub), REML=FALSE, data=df_marked_outliers_contextSet) 
+anova(Fit2_contextSetting) # not significant 
+
+Fit2_actionPrep <-lmer(corr ~ rule+rule_consistent+valence+valence_consistent+ixi_valence_rule+ mask+mask*rule+mask*valence+mask*ixi_valence_rule+(1+rule+rule_consistent+valence+valence_consistent+ixi_valence_rule+ mask|sub), REML=FALSE, data=df_marked_outliers_actionPrep) 
+anova(Fit2_actionPrep) # significant ixi_valence_rule * region interaction 
+effectsize::eta_squared(Fit2_actionPrep, partial=TRUE) # get partial eta-squared values
+
+emmeans(Fit2_actionPrep, pairwise~mask|ixi_valence_rule)
+emtrends(Fit2_actionPrep, pairwise ~ "mask", var="ixi_valence_rule", adjust="none") # to get differences in slope
+test(emtrends(Fit2_actionPrep,  1~"mask", var="ixi_valence_rule", adjust="none")) # to get simple effects
+
+emo_emm_int<-emtrends(Fit2_actionPrep, pairwise ~ "mask", var="ixi_valence_rule", adjust="none") # to get differences in slope
+test(emtrends(Fit2_actionPrep,  1~"mask", var="ixi_valence_rule", adjust="none")) # to get simple effects
+summary(emo_emm_int, infer = c(TRUE, TRUE))
+pairs(emo_emm_int)
+
+#### FPl vs PMd
+t_val <- 2.408   # replace with actual t from output
+n_subj <- length(unique(df_marked_outliers_actionPrep$sub))
+
+d <- t_to_d(t_val, df = n_subj - 1, paired = TRUE)
+d
+
+#### FPl vs 9-46
+t_val <- 1.893   # replace with actual t from output
+n_subj <- length(unique(df_marked_outliers_actionPrep$sub))
+
+d <- t_to_d(t_val, df = n_subj - 1, paired = TRUE)
+d
+
+#########################################################
+#### test for epoch interaction
+Fit2_epoch_interaction <-lmer(corr ~ rule+rule_consistent+valence+valence_consistent+ixi_valence_rule+ mask+mask*rule+mask*valence+mask*ixi_valence_rule+ epoch+epoch*mask*rule+epoch*mask*valence+epoch*mask*ixi_valence_rule+(1+rule+rule_consistent+valence+valence_consistent+ixi_valence_rule+ mask+epoch|sub), REML=FALSE, data=df_marked_outliers_0) 
+anova(Fit2_epoch_interaction)
+emmeans(Fit2_epoch_interaction, pairwise~mask*epoch|ixi_valence_rule)
+
+```
+
+
+Now we want to do RSA - behavior correlations.
+Let's run some correlations with our delta scores
+```{r}
+myRSA_BehData<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/rsa/rsaBetas_Behavior_outliers.csv")
+myRSA_BehData<-subset(myRSA_BehData, (epoch == 'contextSetting'|epoch == 'shockAnticipation'))
+
+########################################
+# Let's look at FPl only for now, just for context setting and shock anticipation epochs:
+fpl_rsa<-subset(myRSA_BehData, mask=="FS_FPl" & (epoch == 'contextSetting'|epoch=='shockAnticipation') & (term == 'rule' | term =='valence'|term=='ixi_valence_rule'))
+#myEpoch='contextSetting'
+myEpoch='shockAnticipation'
+myTerm='ixi_valence_rule'
+df_subset<-subset(fpl_rsa, epoch==myEpoch & term ==myTerm )
+
+df_subset$Estimate_neg<- df_subset$Estimate*-1
+cor_result <- cor.test((df_subset$Estimate*-1) , df_subset$cu_uu_acc_across)
+rho <- round(cor_result$estimate, 3)
+
+acc_fc<-lm(Estimate_neg~cu_uu_acc_across, df_subset)
+a<-anova(acc_fc)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+##########################  Plot FPl 
+dev.new()
+cor_plot<-ggplot(df_subset, aes(x = Estimate_neg, y = cu_uu_acc_across)) +
+  geom_point(color = "#dc99eb", size = 1.5, alpha = 0.9) + 
+  #geom_text(aes(x = Inf, y = -Inf, label = paste("ρ = ", rho,"\n",  "p = ", p_value, sep="")),hjust = 1.1, vjust = 1.5, size = 3.2, color = "#949494") + 
+  annotate("text", x = max(df_subset$Estimate_neg), y = min(df_subset$cu_uu_acc_across), 
+         label = paste("r = ", rho, "\n", "p = ", p_value, sep=""), 
+         hjust = 1.1, vjust = 1.5, size = 3.2, color = "#949494")+
+  stat_smooth(method = "lm", color = "#d4a0df", size = 1, fill="#e1e1e1") +
+  labs(
+    x = "FPl RSA Beta \nShock * Control",
+    y = "Accuracy\n\u0394 Control Unpl \u2212 Uncontrol Unpl")+
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "none", plot.margin = unit(c(1, 0.5, 0, 0.25), "cm")) #+   #scale_x_continuous(
+    #breaks = c(-0.03, 0.00, 0.03, 0.06))
+cairo_pdf("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/corr_FPlIXI_AccuracyControlUnpl_ControlMild_Inverted_shockAnticipation.pdf",height=3.5, width=3.6)
+plot(cor_plot)
+dev.off()
+################################
+
+########################################
+########################################################################################################
+rsa946<-subset(myRSA_BehData, mask=="FS_9-46"  & (epoch == 'contextSetting'|epoch=='shockAnticipation') & (term == 'rule' | term =='valence'|term=='ixi_valence_rule'))
+###midLPFC
+myEpoch='shockAnticipation'
+myTerm='ixi_valence_rule'
+df_subset<-subset(rsa946, epoch==myEpoch & term ==myTerm)
+
+df_subset$Estimate_neg<- df_subset$Estimate*-1
+cor_result <- cor.test((df_subset$Estimate*-1) , df_subset$cu_uu_acc_across)
+rho <- round(cor_result$estimate, 3)
+
+acc_fc<-lm(Estimate_neg~cu_uu_acc_across, df_subset)
+a<-anova(acc_fc)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+##########################  Plot mid-LPFC 
+dev.new()
+cor_plot<-ggplot(df_subset, aes(x = Estimate_neg, y = cu_uu_acc_across)) +
+  geom_point(color = "#99c1eb", size = 1.5, alpha = 0.9) + geom_text(aes(x = Inf, y = Inf, label = paste("ρ = ", rho,"\n",  "p = ", p_value, sep="")),hjust = 1.1, vjust = 1.5, size = 3.2, color = "#949494") + 
+  #geom_text(aes(label = sub), vjust = -0.5, hjust = 0.5, size = 3, color = "black") +  # Add subject ID labels
+
+  stat_smooth(method = "lm", color = "#99c1eb", size = 1, fill="#e1e1e1") +
+  labs(
+    x = "mid-LPFC RSA Beta \nShock * Control",
+    y = "Accuracy\n\u0394 Control Unpl \u2212 Uncontrol Unpl")+
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "none", plot.margin = unit(c(1, 0.5, 0, 0.25), "cm")) 
+cairo_pdf("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/corr_midLPFCIXI_AccuracyControlUnpl_ControlMild_Inverted_shockAnticipation.pdf",height=3.5, width=3.6)
+plot(cor_plot)
+dev.off()
+##############################################
+rsapmd<-subset(myRSA_BehData, mask=="FS_PMd" & (epoch == 'contextSetting'|epoch=='shockAnticipation') & (term == 'rule' | term =='valence'|term=='ixi_valence_rule'))
+myEpoch='shockAnticipation'
+myTerm='ixi_valence_rule'
+df_subset<-subset(rsapmd, epoch==myEpoch & term ==myTerm)
+
+df_subset$Estimate_neg<- df_subset$Estimate*-1
+cor_result <- cor.test((df_subset$Estimate*-1) , df_subset$cu_uu_acc_across)
+rho <- round(cor_result$estimate, 3)
+
+acc_fc<-lm(Estimate_neg~cu_uu_acc_across, df_subset)
+a<-anova(acc_fc)
+p_value <- round(a$`Pr(>F)`[1], 3)
+##########################  Plot PMd
+dev.new()
+cor_plot<-ggplot(df_subset, aes(x = Estimate_neg, y = cu_uu_acc_across)) +
+  geom_point(color = "#9ed4b8", size = 1.5, alpha = 0.9) + geom_text(aes(x = Inf, y = Inf, label = paste("ρ = ", rho,"\n",  "p = ", p_value, sep="")),hjust = 1.1, vjust = 1.5, size = 3.2, color = "#949494") + 
+  #geom_text(aes(label = sub), vjust = -0.5, hjust = 0.5, size = 3, color = "black") +  # Add subject ID labels
+  stat_smooth(method = "lm", color = "#9ed4b8", size = 1, fill="#e1e1e1") +
+  labs(
+    x = "PMd RSA Beta \nShock * Control",
+    y = "Accuracy\n\u0394 Control Unpl \u2212 Uncontrol Unpl")+
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "none", plot.margin = unit(c(1, 0.5, 0, 0.25), "cm")) #+
+  #scale_x_continuous(labels = label_number(accuracy = 0.01)) 
+cairo_pdf("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/rsa/corr_PMdIXI_AccuracyControlUnpl_ControlMild_Inverted_shockAnticipation.pdf",height=3.5, width=3.6)
+plot(cor_plot)
+dev.off()
+```
+
+Test the difference in correlation coefficients
+```{r}
+fpl_rsa<-subset(myRSA_BehData, mask=="FS_FPl" & (epoch == 'contextSetting'|epoch=='shockAnticipation') & (term == 'rule' | term =='valence'|term=='ixi_valence_rule'))
+rsa946<-subset(myRSA_BehData, mask=="FS_9-46"  & (epoch == 'contextSetting'|epoch=='shockAnticipation') & (term == 'rule' | term =='valence'|term=='ixi_valence_rule'))
+rsapmd<-subset(myRSA_BehData, mask=="FS_PMd" & (epoch == 'contextSetting'|epoch=='shockAnticipation') & (term == 'rule' | term =='valence'|term=='ixi_valence_rule'))
+
+myEpoch='shockAnticipation'
+myTerm='ixi_valence_rule'
+
+df_subset_fpl<-subset(fpl_rsa, epoch==myEpoch & term ==myTerm )
+df_subset_fpl$Estimate_FPl<- df_subset_fpl$Estimate*-1
+df_subset_fpl$cu_uu_acc_FPl<-df_subset_fpl$cm_um_acc_across
+df_subset_fpl_use<-subset(df_subset_fpl, select=c(Estimate_FPl,cu_uu_acc_FPl,sub ))
+
+df_subset_946<-subset(rsa946, epoch==myEpoch & term ==myTerm)
+df_subset_946$Estimate_946<- df_subset_946$Estimate*-1
+df_subset_946$cu_uu_acc_946<-df_subset_946$cm_um_acc_across
+df_subset_946_use<-subset(df_subset_946, select=c(Estimate_946,cu_uu_acc_946,sub ))
+
+df_subset_pmd<-subset(rsapmd, epoch==myEpoch & term ==myTerm)
+df_subset_pmd$Estimate_PMd<- df_subset_pmd$Estimate*-1
+df_subset_pmd$cu_uu_acc_PMd<-df_subset_pmd$cm_um_acc_across
+df_subset_pmd_use<-subset(df_subset_pmd, select=c(Estimate_PMd,cu_uu_acc_PMd,sub ))
+
+
+cor_result_946 <- cor.test((df_subset_946$Estimate*-1) , df_subset_946$cu_uu_acc_across)
+rho_946 <- round(cor_result_946$estimate, 3)
+cor_result_fpl <- cor.test((df_subset_fpl$Estimate*-1) , df_subset_fpl$cu_uu_acc_across)
+rho_fpl <- round(cor_result_fpl$estimate, 3)
+cor_result_pmd <- cor.test((df_subset_pmd$Estimate*-1) , df_subset_pmd$cu_uu_acc_across)
+rho_pmd <- round(cor_result_pmd$estimate, 3)
+
+####
+betas1<-left_join(df_subset_fpl_use,df_subset_946_use,by=c("sub"))
+betas<-left_join(df_subset_pmd_use,betas1,by=c("sub"))
+betas$cu_uu_acc<-betas$cu_uu_acc_PMd
+betas<-subset(betas, select=-c(cu_uu_acc_PMd,cu_uu_acc_946, cu_uu_acc_FPl))
+betaList<-list()
+betaList$PFC <- betas
+
+cocor(~Estimate_FPl + cu_uu_acc | Estimate_946 + cu_uu_acc, betaList$PFC)
+cocor(~Estimate_FPl + cu_uu_acc | Estimate_PMd + cu_uu_acc, betaList$PFC)
+cocor(~Estimate_946 + cu_uu_acc | Estimate_PMd + cu_uu_acc, betaList$PFC)
+
+# The correlations are overlapping
+cocor(~um_contextPMd + um_emo | um_contextFPl + um_emo, betaList$PFC) # p > 0.119
+cocor(~um_contextFPl + um_emo | um_context946 + um_emo, betaList$PFC) # p > 0.63
+cocor(~um_contextPMd + um_emo | um_context946 + um_emo, betaList$PFC)
+```

@@ -1,0 +1,809 @@
+---
+title: "PFC Paper - Stasiak & Lapate 2024 - FIR Analyses"
+output: hrbrthemes::ipsum_pdf
+---
+First load our packages
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,  dev = "cairo_pdf")
+library(DescTools)
+library(smplot2)
+library(emmeans)
+library(lme4)
+library(dplyr)
+library(Rmisc)
+library(ggplot2)
+library(hrbrthemes)
+library(forcats)
+library(data.table)
+library(viridis)
+library(sjPlot)
+library(sjmisc)
+library(lmerTest)
+library(dplyr)
+```
+
+Examine the context-encoding response for our three regions of interest
+```{r}
+fir_contextEncode_slope<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/FIR_contextEncode_slope.csv")
+fir_rca<-subset(fir_contextEncode_slope,region=='FPl' |region=='9-46'|region=='PMd' )
+fir_rca<-subset(fir_rca, select=-c(X))
+############################################################################################################
+##############################################################################
+## Are there task effects on the goal-setting response across the rostrocaudal axis?
+fir_rca$shock <- factor(fir_rca$shock)
+fir_rca$shock <- relevel(fir_rca$shock, ref = "Unpleasant")
+fir_rca$control <- factor(fir_rca$control)
+fir_rca$control <- relevel(fir_rca$control, ref = "Controllable")
+fir_rca$region <- factor(fir_rca$region)
+fir_rca$region <- relevel(fir_rca$region, ref = "FPl")
+
+contextEncode_region_byCond<-lmer(contextSet~shock*control*region + (shock+control|sub) + (1|run), fir_rca)
+anova(contextEncode_region_byCond)
+# significant main effect of shock, region, & significant interaction of shock * region
+
+##############################################################################
+#Let's look within each region
+fir_fpl<-subset(fir_rca, region == "FPl")
+fir_946<-subset(fir_rca, region == "9-46")
+fir_pmd<-subset(fir_rca, region == "PMd")
+
+#FPl
+fir_fpl <- within(fir_fpl, shock <- relevel(shock, ref = 'Unpleasant'))
+contextEncode_byCond_FPl<-lmer(contextSet~shock*control + (1|sub), fir_fpl)
+anova(contextEncode_byCond_FPl)
+emmeans(contextEncode_byCond_FPl, pairwise~shock)
+#get confidence interval
+emo_emm_shock <- emmeans(contextEncode_byCond_FPl, pairwise ~ shock)
+summary(emo_emm_shock, infer = c(TRUE, TRUE))#get 95% CI
+#get cohens dz
+myData_agg<-fir_fpl%>% group_by(sub,shock) %>% dplyr::summarize(contextSet= mean(contextSet))%>%as.data.frame()
+round(cohensD(contextSet ~ shock, data=myData_agg,method = "paired"),3) 
+
+#mid-LPFC
+contextEncode_byCond_946<-lmer(contextSet~shock*control + (1|sub), fir_946)
+anova(contextEncode_byCond_946)
+#get confidence interval
+emo_emm_shock <- emmeans(contextEncode_byCond_946, pairwise ~ shock)#get pairwise contrasts
+summary(emo_emm_shock, infer = c(TRUE, TRUE))#get 95% CI
+#get cohens dz
+myData_agg<-fir_946%>% group_by(sub,shock) %>% dplyr::summarize(contextSet= mean(contextSet))%>%as.data.frame()
+round(cohensD(contextSet ~ shock, data=myData_agg,method = "paired"),3)
+
+#PMd
+contextEncode_byCond_PMd<-lmer(contextSet~shock*control + (1|sub), fir_pmd)
+anova(contextEncode_byCond_PMd)
+#get confidence interval
+emo_emm_contr <- emmeans(contextEncode_byCond_PMd, pairwise ~ shock)
+summary(emo_emm_contr, infer = c(TRUE, TRUE))#get 95% CI
+#get cohen's dz
+myData_agg<-fir_pmd%>% group_by(sub,shock) %>% dplyr::summarize(contextSet= mean(contextSet))%>%as.data.frame()
+round(cohensD(contextSet ~ shock, data=myData_agg,method = "paired"),3) #d = 0.943
+
+########################################################################################################################################################################################################################################################################################################################
+
+#Define plotting function
+plot_bar <- function(data, yVar, ylabel, file_name, facet_var = NULL, fill_var,colorVar) {  
+  yVar <- sym(yVar)
+  fill_var <- sym(fill_var)
+  dev.new()
+  p <- ggplot(data, aes(x = region, y = !!yVar, fill = !!fill_var)) +
+    geom_bar(position = position_dodge(.5), size = 0.5, width = 0.5, alpha = 0.7, color = "black", stat = "identity") +
+    geom_errorbar(aes(ymin = !!yVar - se, ymax = !!yVar + se), 
+                  position = position_dodge(.5), size = .4, width = .1, color = 'black') +
+    scale_x_discrete(labels = c("FPl", "mid-LPFC", "PMd")) + 
+    scale_fill_manual(values = colorVar, name = "Shock Intensity", labels = c("Unpleasant", "Mild")) +
+    theme_classic(base_size = 14) +
+    labs(y = ylabel, x = "Region") +
+    theme(axis.title.x = element_text(size = 14), axis.title.y = element_text(size = 14),
+          axis.text.x = element_text(size = 11.5), axis.text.y = element_text(size = 11.5),
+          legend.key.width = unit(0.3, "cm"), legend.key.height = unit(0.3, "cm"),
+          legend.text = element_text(size = 9), legend.title = element_text(size = 9),
+          legend.position = "none") +
+    scale_y_continuous(labels = ~sub("-", "−", .x))
+  
+  if (!is.null(facet_var)) {
+    p <- p + facet_wrap(vars(!!sym(facet_var)))
+  }
+  cairo_pdf(file_name,height=3, width = ifelse(is.null(facet_var), 5, 7))
+  plot(p)
+  dev.off()
+}
+##########################################################################################
+fir_rca_avg<-fir_rca %>%
+    group_by(sub, run, region) %>%
+    dplyr::summarise(contextEncode_avg = mean(contextSet),slope_avg = mean(slope), .groups = 'drop') %>%as.data.frame()
+fir_rca_byCond_avg<-fir_rca %>%
+    group_by(sub, run, region, shock, control) %>%
+    dplyr::summarise(contextEncode_avg = mean(contextSet),slope_avg = mean(slope), .groups = 'drop') %>%as.data.frame()
+
+##########################################################################################
+# We see significantly greater responses to Unpleasant vs Mild shock conditions - let's plot that!
+fir_rca <- fir_rca %>%     
+dplyr::mutate(ID = row_number())
+fir_rca_shock_avg<-fir_rca %>%
+    group_by(sub, run, region, shock) %>%
+    dplyr::summarise(contextEncode_avg = mean(contextSet), .groups = 'drop') %>%as.data.frame()
+
+fir_rca_um<-reshape(fir_rca_shock_avg, idvar = c("sub", "region", "run"), timevar = "shock", direction = "wide")
+fir_rca_um$um_contextEncode<-fir_rca_um$contextEncode_avg.Unpleasant - fir_rca_um$contextEncode_avg.Mild
+fir_rca_um<-subset(fir_rca_um, select=-c(contextEncode_avg.Unpleasant, contextEncode_avg.Mild ))
+
+#### Plot deltas
+fir_rca_um_avg<-fir_rca_um %>%
+    group_by(sub, region) %>%
+    dplyr::summarise(um_contextEncode_avg = mean(um_contextEncode), .groups = 'drop') %>%as.data.frame()
+fir_rca_um_avg_SE <- summarySEwithin(data=fir_rca_um_avg, measurevar ='um_contextEncode_avg', betweenvars=NULL, withinvars=c( 'region'),idvar='sub', na.rm=FALSE, conf.interval=.95) #.drop=TRUE
+fir_rca_um_avg_SE <- within(fir_rca_um_avg_SE, region <- relevel(region, ref = 'PMd'))
+fir_rca_um_avg_SE <- within(fir_rca_um_avg_SE, region <- relevel(region, ref = '9-46'))
+fir_rca_um_avg_SE <- within(fir_rca_um_avg_SE, region <- relevel(region, ref = 'FPl'))
+
+colorList <- c("#d4a0df", "#99c1eb", "#9cc5ac")
+
+plot_bar(fir_rca_um_avg_SE, 'um_contextEncode_avg', 'Context Encoding\n\u0394 Unpleasant \u2212 Mild', '/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/revisions_june2025/featquery_FIRlearning/figures/um_contextEncoding_Region_barplot_2024.pdf', NULL, "region",colorList)
+
+##############################################################################
+```
+
+
+Examine slope across our three regions of interest
+```{r}
+#################################################### Slope ####################################################
+##########################################################################################################
+############### Let's see if there are task effects on slope * region 
+fir_rca$shock <- factor(fir_rca$shock)
+fir_rca$shock <- relevel(fir_rca$shock, ref = "Unpleasant")
+fir_rca$control <- factor(fir_rca$control)
+fir_rca$control <- relevel(fir_rca$control, ref = "Controllable")
+fir_rca$region <- factor(fir_rca$region)
+fir_rca$region <- relevel(fir_rca$region, ref = "FPl")
+
+slope_region_cond<-lmer(slope~shock*control*region + (shock+control|sub) + (1|run), fir_rca)
+anova(slope_region_cond)
+#main effect of shock,region, and significant shock*control interaction
+
+emo_emm_int <- emmeans(slope_region_cond, pairwise ~ region)#get pairwise contrasts
+summary(emo_emm_int, infer = c(TRUE, TRUE))#get confidence interval
+
+emmeans(slope_region_cond, pairwise~region) # Slopes significantly differed across regions (F = 5.045, p = 0.006), driven by greater ramping in FPl than PMd
+emmeans(slope_region_cond, pairwise~shock) # Overall, unpleasant shock trials were associated with greater slopes than mild shock trials
+
+########################################get effect size for FPl vs PMd slope
+myData_agg_int<-fir_rca%>% group_by(sub, region) %>% dplyr::summarize(slope= mean(slope))%>%as.data.frame()
+FPl_PMd <- myData_agg_int[myData_agg_int$region=="FPl" | myData_agg_int$region == "PMd",]
+FPl_PMd<-droplevels(FPl_PMd)
+round(cohensD(slope ~ region, data = FPl_PMd, method = "paired"),3)
+
+########## for shock ME
+emo_emm_int <- emmeans(slope_region_cond, pairwise ~ shock)#get pairwise contrasts
+summary(emo_emm_int, infer = c(TRUE, TRUE))
+myData_agg<-fir_rca%>% group_by(sub,shock) %>% dplyr::summarize(slope= mean(slope))%>%as.data.frame()
+round(cohensD(slope ~ shock, data = myData_agg, method = "paired"),3)
+
+########## for shock * control interaction
+emo_emm_int <- emmeans(slope_region_cond, pairwise ~ shock*control)#get pairwise contrasts
+summary(emo_emm_int, infer = c(TRUE, TRUE))
+myData_agg_int<-fir_rca%>% group_by(sub, shock, control) %>% dplyr::summarize(slope= mean(slope))%>%as.data.frame()
+UncontrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Uncontrollable",]
+UncontrMild <- myData_agg_int[myData_agg_int$shock=="Mild"&myData_agg_int$control=="Uncontrollable",]
+
+#Uncontrol Unpl - Uncontrol Mild
+round(cohensD(UncontrUnpl$slope, UncontrMild$slope,method = "paired"),3)
+
+#################################################################################################################################### plotting ####################
+fir_rca <- fir_rca %>%     
+dplyr::mutate(ID = row_number())
+fir_rca_sub<-subset(fir_rca, region=='FPl' | region =='PMd')
+
+fir_rca_shock_avg<-fir_rca_sub %>%
+    group_by(sub, region) %>%
+    dplyr::summarise(slope_avg = mean(slope), .groups = 'drop') %>%as.data.frame()
+
+fir_rca_um<-reshape(fir_rca_shock_avg, idvar = c("sub", "region", "run", "control"), timevar = "shock", direction = "wide")
+fir_rca_um$um_slope<-fir_rca_um$slope_avg.Unpleasant - fir_rca_um$slope_avg.Mild
+fir_rca_um<-subset(fir_rca_um, select=-c(slope_avg.Unpleasant, slope_avg.Mild ))
+
+fir_rca_um_avg<-fir_rca_um %>%
+  group_by(sub, region, control) %>%
+  dplyr::summarise(um_slope_avg = mean(um_slope), .groups = 'drop') %>%as.data.frame()
+
+fir_rca_slope_um_SE <- summarySEwithin(data=fir_rca_um_avg, measurevar ='um_slope_avg', betweenvars=NULL, withinvars=c( 'region', 'control'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95)
+fir_rca_slope_um_SE <- within(fir_rca_slope_um_SE, region <- relevel(region, ref = 'PMd'))
+fir_rca_slope_um_SE <- within(fir_rca_slope_um_SE, region <- relevel(region, ref = '9-46'))
+fir_rca_slope_um_SE <- within(fir_rca_slope_um_SE, region <- relevel(region, ref = 'FPl'))
+fir_rca_slope_um_SE$region_control<- paste(fir_rca_slope_um_SE$region, fir_rca_slope_um_SE$control)
+
+colorList <- c("#ececec",  "#99c1eb",  "#ececec","#d4a0df", "#ececec", "#9cc5ac")
+plot_bar(fir_rca_slope_um_SE, "um_slope_avg", 'Slope\n\u0394 Unpleasant \u2212 Mild', "/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/revisions_june2025/featquery_FIRlearning/figures/slope_Region_barplot_2024.pdf", facet_var = NULL, "region_control", colorList)
+
+fir_rca <- fir_rca %>%     
+dplyr::mutate(ID = row_number())
+fir_rca_shock_avg<-fir_rca %>%
+    group_by(sub, run, region, shock, control) %>%
+    dplyr::summarise(slope_avg = mean(slope), .groups = 'drop') %>%as.data.frame()
+
+fir_rca_slope_SE <- summarySEwithin(data=fir_rca_shock_avg, measurevar ='slope_avg', betweenvars=NULL, withinvars=c( 'region', 'control', 'shock'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95)
+fir_rca_slope_SE <- within(fir_rca_slope_SE, region <- relevel(region, ref = 'PMd'))
+fir_rca_slope_SE <- within(fir_rca_slope_SE, region <- relevel(region, ref = '9-46'))
+fir_rca_slope_SE <- within(fir_rca_slope_SE, region <- relevel(region, ref = 'FPl'))
+fir_rca_slope_SE$region_shock<-paste(fir_rca_slope_SE$region, fir_rca_slope_SE$shock)
+
+#################
+
+#########
+
+#Define plotting function
+plot_bar <- function(data, yVar, ylabel, file_name, facet_var = NULL, fill_var,colorVar) {  
+  yVar <- sym(yVar)
+  fill_var <- sym(fill_var)
+  dev.new()
+  p <- ggplot(data, aes(x = region, y = !!yVar, fill = !!fill_var)) +
+    geom_bar(position = position_dodge(.5), size = 0.5, width = 0.5, alpha = 0.65, color = "black", stat = "identity") +
+    geom_errorbar(aes(ymin = !!yVar - se, ymax = !!yVar + se), 
+                  position = position_dodge(.5), size = .4, width = .1, color = 'black') +
+    scale_x_discrete(labels = c("FPl", "mid-LPFC", "PMd")) + 
+    scale_fill_manual(values = colorVar, name = "Control", labels = c("Uncontrollable", "Controllable")) +
+    theme_classic(base_size = 14) +
+    labs(y = ylabel, x = "Region") +
+    theme(axis.title.x = element_text(size = 14), axis.title.y = element_text(size = 14),
+          axis.text.x = element_text(size = 11.5), axis.text.y = element_text(size = 11.5),
+          legend.key.width = unit(0.3, "cm"), legend.key.height = unit(0.3, "cm"),
+          legend.text = element_text(size = 9), legend.title = element_text(size = 9),
+          legend.position = "none") +
+    scale_y_continuous(labels = ~sub("-", "−", .x))
+  
+  if (!is.null(facet_var)) {
+    p <- p + facet_wrap(vars(!!sym(facet_var)))
+  }
+  cairo_pdf(file_name,height=3, width = ifelse(is.null(facet_var), 5, 7))
+  plot(p)
+  dev.off()
+}
+
+##################
+######################
+### Let's look within regions
+fir_fpl<-subset(fir_rca, region == "FPl")
+fir_946<-subset(fir_rca, region == "9-46")
+fir_pmd<-subset(fir_rca, region == "PMd")
+
+slope_cond_fpl<-lmer(slope~shock*control + (1|sub) + (1|run), fir_fpl)
+anova(slope_cond_fpl)# significant main effect of shock, shock * control interaction 
+effectsize::eta_squared(slope_cond_fpl, partial=TRUE) # get partial eta-squared values
+emmeans(slope_cond_fpl, pairwise~shock*control)
+emmeans(slope_cond_fpl, pairwise~shock)
+emmeans(slope_cond_fpl, pairwise~shock|control)
+emmeans(slope_cond_fpl, pairwise~shock*control)
+
+emo_emm_int <- emmeans(slope_cond_fpl, pairwise ~ shock*control)#get pairwise contrasts
+summary(emo_emm_int, infer = c(TRUE, TRUE))
+myData_agg_int<-fir_fpl%>% group_by(sub, shock, control) %>% dplyr::summarize(slope= mean(slope))%>%as.data.frame()
+UncontrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Uncontrollable",]
+UncontrMild <- myData_agg_int[myData_agg_int$shock=="Mild"&myData_agg_int$control=="Uncontrollable",]
+#UncontrUnpl - UncontrMild
+round(cohensD(UncontrUnpl$slope, UncontrMild$slope,method = "paired"),3)
+
+
+slope_cond_946<-lmer(slope~shock*control + (1|sub) + (1|run), fir_946)
+anova(slope_cond_946)# significant shock ME
+
+
+slope_cond_pmd<-lmer(slope~shock*control + (1|sub) + (1|run), fir_pmd)
+anova(slope_cond_pmd) # there is a trending main effect of control in PMd
+######################
+```
+
+Examining TR-by-TR changes in activation across our regions of interest.
+Let's first make a plot that subtracts beta activation from that at TR 1, such that we have 0 as a starting point
+~~~~~~~~~~
+```{r}
+feat25<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/FIR_data_clean.csv")
+feat25$sub<- factor(feat25$sub)
+feat25$tr<- factor(feat25$tr)
+
+# We will need to mutate our data from long to wide to create delta beta values
+feat25_id <- feat25 %>%
+    dplyr::mutate(ID = row_number())
+feat25_wide<-reshape(feat25_id, idvar = c("sub", "region", "run", "shock", "condition","control"), timevar = "tr", direction = "wide")
+
+feat25_wide$TR1<-feat25_wide$beta.1 - feat25_wide$beta.1
+feat25_wide$TR2<-feat25_wide$beta.2 - feat25_wide$beta.1
+feat25_wide$TR3<-feat25_wide$beta.3 - feat25_wide$beta.1
+feat25_wide$TR4<-feat25_wide$beta.4 - feat25_wide$beta.1
+feat25_wide$TR5<-feat25_wide$beta.5 - feat25_wide$beta.1
+feat25_wide$TR6<-feat25_wide$beta.6 - feat25_wide$beta.1
+feat25_wide$TR7<-feat25_wide$beta.7 - feat25_wide$beta.1
+feat25_wide$TR8<-feat25_wide$beta.8 - feat25_wide$beta.1
+feat25_wide$TR9<-feat25_wide$beta.9 - feat25_wide$beta.1
+
+feat25_wide<-subset(feat25_wide, select=-c(ID.4, ID.3, ID.2, beta.1,  beta.2,  beta.3, beta.4, ID.1, ID.9, ID.10, ID.8 ,ID.7,  ID.6,ID.5, beta.5,  beta.6,  beta.7, beta.8,beta.9,  beta.10, X.1, X.2, X.3, X.4, X.5, X.6, X.7, X.9, X.8, X.10 ))
+
+# Back to long format and rename our values in the TR column to be integers again for easy plotting
+feat25_long <- melt(setDT(feat25_wide), id.vars = c("sub","run", "region", "condition", 'control', 'shock'), variable.name = "TR")
+
+fir_rca<-subset(feat25_long, region ==  'FPl' |region=='9-46'|region=='PMd')
+fir_rca$run<- factor(fir_rca$run)
+
+fir_rca_avg<-fir_rca %>%
+    group_by(sub, region, TR) %>%
+    dplyr::summarise(avg = mean(value), count = n(), .groups = 'drop') %>%as.data.frame()
+library(Rmisc)
+################ For statistics:
+### Test TR * shock * control * region interaction:
+fir_rca_sub<-subset(fir_rca, (TR!="TR10"))
+fir_rca_sub$TR <- gsub("TR", "", fir_rca_sub$TR)
+fir_rca_sub$TR <- as.factor(fir_rca_sub$TR)
+
+fir_rca_fpl<-subset(fir_rca_sub, region=="FPl")
+fir_rca_pmd<-subset(fir_rca_sub, region=="PMd")
+fir_rca_946<-subset(fir_rca_sub, region=="9-46")
+
+tr_cond_region_int<-lmer(value ~ TR * shock * control * region + (1|sub) + (1|run), fir_rca_sub)
+anova(tr_cond_region_int)
+emmeans(tr_cond_region_int, pairwise~ control*shock*region)
+summary(tr_cond_region_int)
+
+
+####################Look within region
+#FPl
+fir_rca_fpl$control <- as.factor(fir_rca_fpl$control)
+tr_cond_fpl_int<-lmer(value ~ TR * shock * control + (1|sub) + (1|run), fir_rca_fpl)
+anova(tr_cond_fpl_int)
+
+#get effect size for interaction
+emo_emm_int <- emmeans(tr_cond_fpl_int, pairwise ~ shock*control)#get pairwise contrasts
+summary(emo_emm_int, infer = c(TRUE, TRUE))
+myData_agg_int<-fir_rca_fpl%>% group_by(sub, shock, control) %>% dplyr::summarize(value= mean(value))%>%as.data.frame()
+ContrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Controllable",]
+UncontrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Uncontrollable",]
+ContrMild <- myData_agg_int[myData_agg_int$shock=="Mild"&myData_agg_int$control=="Controllable",]
+UncontrMild <- myData_agg_int[myData_agg_int$shock=="Mild"&myData_agg_int$control=="Uncontrollable",]
+#Uncontrol Unpl - Uncontrol Mild
+round(cohensD(UncontrUnpl$value, UncontrMild$value,method = "paired"),3)
+
+
+#mid-LPFC
+tr_cond_946_int<-lmer(value ~ TR * shock * control + (1|sub) + (1|run), fir_rca_946)
+anova(tr_cond_946_int)
+emmeans(tr_cond_946_int, pairwise~ shock|TR)
+
+#PMd
+tr_cond_pmd_int<-lmer(value ~ TR * shock * control + (1|sub) + (1|run), fir_rca_pmd)
+anova(tr_cond_pmd_int)
+emmeans(tr_cond_pmd_int, pairwise~ shock|TR)
+
+
+```
+
+
+Plotting each region by condition
+```{r}
+######################
+condition_mapping <- c("UU" = "Uncontrollable Unpleasant", "CU" = "Controllable Unpleasant", 
+                       "CP" = "Controllable Mild", "UP" = "Uncontrollable Mild")
+fir_rca <- fir_rca %>%
+  mutate(condition_full = recode(condition, !!!condition_mapping))
+fir_rca<-subset(fir_rca, select=-c(condition))
+
+fir_rca$TR <- gsub("TR", "", fir_rca$TR)
+fir_rca$TR <- as.integer(fir_rca$TR)
+fir_rca<-subset(fir_rca, TR!=10)
+fir_fpl<-subset(fir_rca, region=='FPl')
+fir_946<-subset(fir_rca, region=='9-46')
+fir_pmd<-subset(fir_rca, region=='PMd')
+
+fir_fpl_avg<-fir_fpl %>%
+    group_by(sub, condition_full, TR) %>%
+    dplyr::summarise(avg = mean(value), count = n(), .groups = 'drop') %>%as.data.frame()
+
+fir_pmd_avg<-fir_pmd %>%
+    group_by(sub, condition_full, TR) %>%
+    dplyr::summarise(avg = mean(value), count = n(), .groups = 'drop') %>%as.data.frame()
+
+fir_946_avg<-fir_946 %>%
+    group_by(sub, condition_full, TR) %>%
+    dplyr::summarise(avg = mean(value), count = n(), .groups = 'drop') %>%as.data.frame()
+
+library(Rmisc)
+fir_fpl_avg_SE<- summarySEwithin(data=fir_fpl_avg, measurevar ='avg', betweenvars=NULL, withinvars=c('condition_full', 'TR'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95)
+fir_pmd_avg_SE<- summarySEwithin(data=fir_pmd_avg, measurevar ='avg', betweenvars=NULL, withinvars=c('condition_full', 'TR'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95)
+fir_946_avg_SE<- summarySEwithin(data=fir_946_avg, measurevar ='avg', betweenvars=NULL, withinvars=c('condition_full', 'TR'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95)
+
+library(dplyr)
+fir_fpl_avg_SE_relevel <- fir_fpl_avg_SE %>%
+    mutate(condition_full = fct_relevel(condition_full, "Uncontrollable Mild", "Uncontrollable Unpleasant", "Controllable Mild", "Controllable Unpleasant"))
+fir_pmd_avg_SE_relevel <- fir_pmd_avg_SE %>%
+    mutate(condition_full = fct_relevel(condition_full, "Uncontrollable Mild", "Uncontrollable Unpleasant", "Controllable Mild", "Controllable Unpleasant"))
+fir_946_avg_SE_relevel <- fir_946_avg_SE %>%
+    mutate(condition_full = fct_relevel(condition_full, "Uncontrollable Mild", "Uncontrollable Unpleasant", "Controllable Mild", "Controllable Unpleasant"))
+
+dev.new()
+fpl_fir_plt <-fir_fpl_avg_SE %>%
+  ggplot( aes(x=TR, y=avg, group=condition_full, color=condition_full), size=7) + # dark gold ecc05a light f4d692
+    geom_line(size=3.3) +scale_color_manual(values=c('#e5e5e5', '#f7e3b8','#cbcbcb', '#ecc05a'), name = "Condition", labels = c("Controllable Mild", "Controllable Unpleasant", "Uncontrollable Mild", "Uncontrollable Unpleasant"))+
+    geom_errorbar(aes(ymax =avg + se,ymin = avg - se), width=.1, size=0.9)+ scale_x_discrete(name ="TR", limits=c("1","2","3", "4", "5", "6", "7", "8", "9"))+
+    theme_classic(base_size = 19) +
+    theme(axis.title.x = element_text(size = 26), axis.title.y = element_text(size = 28),
+          axis.text.x = element_text(size = 20), axis.text.y = element_text(size = 20),
+          legend.key.width = unit(0.3, "cm"), legend.key.height = unit(0.3, "cm"),
+          legend.text = element_text(size = 15), legend.title = element_text(size = 15),
+          legend.position = "right") +  ylab("FPl \u03B2 Activation") 
+cairo_pdf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/fir/firs_FPl_byCond_yellow_edit.pdf',height=6, width=18.5)
+plot(fpl_fir_plt)
+dev.off()
+###################
+####midLPFC:
+dev.new()
+fir_946_plt <-fir_946_avg_SE %>%
+  ggplot( aes(x=TR, y=avg, group=condition_full, color=condition_full), size=7) + # dark gold ecc05a light f4d692
+    geom_line(size=3.3) +scale_color_manual(values=c('#e5e5e5', '#f7e3b8','#cbcbcb', '#ecc05a'), name = "Condition", labels = c("Controllable Mild", "Controllable Unpleasant", "Uncontrollable Mild", "Uncontrollable Unpleasant"))+
+    geom_errorbar(aes(ymax =avg + se,ymin = avg - se), width=.1, size=0.9)+ scale_x_discrete(name ="TR", limits=c("1","2","3", "4", "5", "6", "7", "8", "9"))+
+    theme_classic(base_size = 19) +
+    theme(axis.title.x = element_text(size = 26), axis.title.y = element_text(size = 28),
+          axis.text.x = element_text(size = 20), axis.text.y = element_text(size = 20),
+          legend.key.width = unit(0.3, "cm"), legend.key.height = unit(0.3, "cm"),
+          legend.text = element_text(size = 15), legend.title = element_text(size = 15),
+          legend.position = "right") +  ylab("mid-LPFC \u03B2 Activation") 
+cairo_pdf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/fir/firs_946_byCond_yellow_edit.pdf',height=6, width=18.5)
+plot(fir_946_plt)
+dev.off()
+
+###################
+####PMd:
+dev.new()
+fir_pmd_plt <-fir_pmd_avg_SE %>%
+  ggplot( aes(x=TR, y=avg, group=condition_full, color=condition_full), size=7) + # dark gold ecc05a light f4d692
+    geom_line(size=3.3) +scale_color_manual(values=c('#e5e5e5', '#f7e3b8','#cbcbcb', '#ecc05a'), name = "Condition", labels = c("Controllable Mild", "Controllable Unpleasant", "Uncontrollable Mild", "Uncontrollable Unpleasant"))+
+    geom_errorbar(aes(ymax =avg + se,ymin = avg - se), width=.1, size=0.9)+ scale_x_discrete(name ="TR", limits=c("1","2","3", "4", "5", "6", "7", "8", "9"))+
+    theme_classic(base_size = 19) +
+    theme(axis.title.x = element_text(size = 26), axis.title.y = element_text(size = 28),
+          axis.text.x = element_text(size = 20), axis.text.y = element_text(size = 20),
+          legend.key.width = unit(0.3, "cm"), legend.key.height = unit(0.3, "cm"),
+          legend.text = element_text(size = 15), legend.title = element_text(size = 15),
+          legend.position = "right") +  ylab("PMd \u03B2 Activation") 
+cairo_pdf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/fir/firs_pmd_byCond_yellow.pdf',height=6, width=18.5)
+plot(fir_pmd_plt)
+dev.off()
+
+##################################################################################################################
+#################################################################################################################
+```
+
+
+Now let's run some brain-behavior analyses to see if the different neural responses we see for the shock conditions are reflected in emotion reports.
+
+We're also going to make dataframes with our delta metrics of interest, so we will make Unpleasant - Mild, Controllable - Uncontrollable, and Uncontrollable Unpleasant - Uncontrollable Mild.
+```{r}
+### within Subs
+brain_beh_withinSub<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/brain-behavior/neuro_behavior_withinSubs.csv")
+brain_beh_withinSub<-subset(brain_beh_withinSub, select=-c(X, condition.y))
+
+######################################################################
+################# Unpleasant - Mild deltas #########################
+# average across controllability first
+brain_beh_withinSub_um<-brain_beh_withinSub %>%
+    group_by(sub,run, region, shock) %>% # average across control
+    dplyr::summarise(contextSet = mean(contextSet), slope = mean(slope), emo = mean(emo),rt = mean(rt, na.rm=TRUE),acc = mean(acc), cert = mean(cert), .groups = 'drop') %>%as.data.frame()
+brain_beh_withinSub_um <- brain_beh_withinSub_um %>%
+    dplyr::mutate(ID = row_number())
+brain_beh_withinSub_um<-reshape(brain_beh_withinSub_um, idvar = c("sub","run", "region"), timevar = "shock", direction = "wide")
+brain_beh_withinSub_um$um_contextSet<-brain_beh_withinSub_um$contextSet.Unpleasant - brain_beh_withinSub_um$contextSet.Mild
+brain_beh_withinSub_um$um_slope<- brain_beh_withinSub_um$slope.Unpleasant - brain_beh_withinSub_um$slope.Mild
+brain_beh_withinSub_um$um_emo<-brain_beh_withinSub_um$emo.Unpleasant - brain_beh_withinSub_um$emo.Mild
+brain_beh_withinSub_um$um_acc<- brain_beh_withinSub_um$acc.Unpleasant - brain_beh_withinSub_um$acc.Mild
+brain_beh_withinSub_um$um_cert<-brain_beh_withinSub_um$cert.Unpleasant - brain_beh_withinSub_um$cert.Mild
+brain_beh_withinSub_um$um_rt<- brain_beh_withinSub_um$rt.Unpleasant - brain_beh_withinSub_um$rt.Mild
+
+brain_beh_withinSub_um<-subset(brain_beh_withinSub_um, select=-c(contextSet.Unpleasant, slope.Unpleasant, contextSet.Mild, slope.Mild,rt.Unpleasant,rt.Mild, cert.Mild, cert.Unpleasant,  emo.Mild, emo.Unpleasant,acc.Unpleasant, acc.Mild, ID.Mild, ID.Unpleasant))
+
+
+######################################################################
+############## Uncontrol Unpleasant - Uncontrol Mild deltas ###############
+brain_beh_withinSub_uncontrol<-subset(brain_beh_withinSub, control == "Uncontrollable")
+brain_beh_withinSub_uncontrol<-subset(brain_beh_withinSub_uncontrol, select=-c(control))
+brain_beh_withinSub_uncontrol <- brain_beh_withinSub_uncontrol %>%
+    dplyr::mutate(ID = row_number())
+brain_beh_withinSub_uncontrol_um<-reshape(brain_beh_withinSub_uncontrol, idvar = c("sub","run", "region"), timevar = "shock", direction = "wide")
+brain_beh_withinSub_uncontrol_um$uum_contextSet<-brain_beh_withinSub_uncontrol_um$contextSet.Unpleasant - brain_beh_withinSub_uncontrol_um$contextSet.Mild
+brain_beh_withinSub_uncontrol_um$uum_slope<- brain_beh_withinSub_uncontrol_um$slope.Unpleasant - brain_beh_withinSub_uncontrol_um$slope.Mild
+brain_beh_withinSub_uncontrol_um$uum_emo<-brain_beh_withinSub_uncontrol_um$emo.Unpleasant - brain_beh_withinSub_uncontrol_um$emo.Mild
+brain_beh_withinSub_uncontrol_um$uum_acc<- brain_beh_withinSub_uncontrol_um$acc.Unpleasant - brain_beh_withinSub_uncontrol_um$acc.Mild
+brain_beh_withinSub_uncontrol_um$uum_cert<-brain_beh_withinSub_uncontrol_um$cert.Unpleasant - brain_beh_withinSub_uncontrol_um$cert.Mild
+brain_beh_withinSub_uncontrol_um$uum_rt<- brain_beh_withinSub_uncontrol_um$rt.Unpleasant - brain_beh_withinSub_uncontrol_um$rt.Mild
+
+brain_beh_withinSub_uncontrol_um<-subset(brain_beh_withinSub_uncontrol_um, select=-c(contextSet.Unpleasant, slope.Unpleasant, contextSet.Mild, slope.Mild,rt.Unpleasant,rt.Mild, cert.Mild, cert.Unpleasant,  emo.Mild, emo.Unpleasant,acc.Unpleasant, acc.Mild, ID.Mild, ID.Unpleasant))
+
+
+######################################################################
+############## Control - Uncontrol deltas ###############
+# average across shock first
+brain_beh_withinSub_cu<-brain_beh_withinSub %>%
+    group_by(sub,run, region, control) %>% # average across shock
+    dplyr::summarise(contextSet = mean(contextSet), slope = mean(slope), emo = mean(emo),rt = mean(rt, na.rm=TRUE),acc = mean(acc), cert = mean(cert), .groups = 'drop') %>%as.data.frame()
+brain_beh_withinSub_cu <- brain_beh_withinSub_cu %>%
+    dplyr::mutate(ID = row_number())
+brain_beh_withinSub_cu<-reshape(brain_beh_withinSub_cu, idvar = c("sub","run", "region"), timevar = "control", direction = "wide")
+brain_beh_withinSub_cu$cu_contextSet<-brain_beh_withinSub_cu$contextSet.Controllable - brain_beh_withinSub_cu$contextSet.Uncontrollable
+brain_beh_withinSub_cu$cu_slope<- brain_beh_withinSub_cu$slope.Controllable - brain_beh_withinSub_cu$slope.Uncontrollable
+brain_beh_withinSub_cu$cu_emo<-brain_beh_withinSub_cu$emo.Controllable - brain_beh_withinSub_cu$emo.Uncontrollable
+brain_beh_withinSub_cu$cu_acc<- brain_beh_withinSub_cu$acc.Controllable - brain_beh_withinSub_cu$acc.Uncontrollable
+brain_beh_withinSub_cu$cu_cert<-brain_beh_withinSub_cu$cert.Controllable - brain_beh_withinSub_cu$cert.Uncontrollable
+brain_beh_withinSub_cu$cu_rt<- brain_beh_withinSub_cu$rt.Controllable - brain_beh_withinSub_cu$rt.Uncontrollable
+
+brain_beh_withinSub_cu<-subset(brain_beh_withinSub_cu, select=-c(contextSet.Uncontrollable, slope.Uncontrollable, contextSet.Controllable, slope.Controllable,rt.Uncontrollable,rt.Controllable, cert.Controllable, cert.Uncontrollable,  emo.Uncontrollable, emo.Controllable,acc.Uncontrollable, acc.Controllable,  ID.Controllable, ID.Uncontrollable))
+
+
+############## control Unpleasant - control Mild deltas ###############
+brain_beh_withinSub_control<-subset(brain_beh_withinSub, control == "Controllable")
+brain_beh_withinSub_control<-subset(brain_beh_withinSub_control, select=-c(control))
+brain_beh_withinSub_control <- brain_beh_withinSub_control %>%
+    dplyr::mutate(ID = row_number())
+brain_beh_withinSub_control_umc<-reshape(brain_beh_withinSub_control, idvar = c("sub","run", "region"), timevar = "shock", direction = "wide")
+brain_beh_withinSub_control_umc$umc_contextSet<-brain_beh_withinSub_control_umc$contextSet.Unpleasant - brain_beh_withinSub_control_umc$contextSet.Mild
+brain_beh_withinSub_control_umc$umc_slope<- brain_beh_withinSub_control_umc$slope.Unpleasant - brain_beh_withinSub_control_umc$slope.Mild
+brain_beh_withinSub_control_umc$umc_emo<-brain_beh_withinSub_control_umc$emo.Unpleasant - brain_beh_withinSub_control_umc$emo.Mild
+brain_beh_withinSub_control_umc$umc_acc<- brain_beh_withinSub_control_umc$acc.Unpleasant - brain_beh_withinSub_control_umc$acc.Mild
+brain_beh_withinSub_control_umc$umc_cert<-brain_beh_withinSub_control_umc$cert.Unpleasant - brain_beh_withinSub_control_umc$cert.Mild
+brain_beh_withinSub_control_umc$umc_rt<- brain_beh_withinSub_control_umc$rt.Unpleasant - brain_beh_withinSub_control_umc$rt.Mild
+
+brain_beh_withinSub_control_umc<-subset(brain_beh_withinSub_control_umc, select=-c(contextSet.Unpleasant, slope.Unpleasant, contextSet.Mild, slope.Mild,rt.Unpleasant,rt.Mild, cert.Mild, cert.Unpleasant,  emo.Mild, emo.Unpleasant,acc.Unpleasant, acc.Mild, ID.Mild, ID.Unpleasant))
+
+######################################################################
+######################################################################
+### Join these dataframes
+brain_beh_withinSub_cu_um<-brain_beh_withinSub_cu %>%
+  left_join(brain_beh_withinSub_um, by = c("sub", "run", "region"))
+
+brain_beh_withinSub_cu_um_uum<-brain_beh_withinSub_cu_um %>%
+  left_join(brain_beh_withinSub_uncontrol_um, by = c("sub", "run", "region"))
+
+brain_beh_withinSub_deltas<-brain_beh_withinSub_cu_um_uum %>%
+  left_join(brain_beh_withinSub_control_umc, by = c("sub", "run", "region"))
+
+write.csv(brain_beh_withinSub_deltas, "/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/data/brain-behavior/neuro_behavior_withinSubs_deltas.csv")
+
+#######################################################
+
+### Use this to make an across-subs df
+brain_beh_acrossSub_deltas1<-brain_beh_withinSub_deltas %>%
+    group_by(sub,region) %>% # average across shock
+    dplyr::summarise(cu_contextSet = mean(cu_contextSet), cu_slope = mean(cu_slope), cu_emo = mean(cu_emo),cu_rt = mean(cu_rt, na.rm=TRUE),cu_acc = mean(cu_acc), cu_cert = mean(cu_cert),um_contextSet = mean(um_contextSet), um_slope = mean(um_slope), um_emo = mean(um_emo),um_rt = mean(um_rt, na.rm=TRUE),um_acc = mean(um_acc), um_cert = mean(um_cert),uum_contextSet = mean(uum_contextSet), uum_slope = mean(uum_slope), uum_emo = mean(uum_emo),uum_rt = mean(uum_rt, na.rm=TRUE),uum_acc = mean(uum_acc), uum_cert = mean(uum_cert),umc_contextSet = mean(umc_contextSet), umc_slope = mean(umc_slope), umc_emo = mean(umc_emo),umc_acc = mean(umc_acc), umc_cert = mean(umc_cert), .groups = 'drop') %>%as.data.frame()
+
+write.csv(brain_beh_acrossSub_deltas1, "/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/data/brain-behavior/neuro_behavior_acrossSubs_deltas1.csv")
+
+```
+
+
+Perfect! Now we are ready to run brain-behavior analyses. 
+```{r}
+# Within subjects dataframe:
+acrossSub_deltas1<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/brain-behavior/neuro_behavior_acrossSubs_deltas1.csv")
+
+##############################Unpleasant - Mild #################################################################
+across_fpl1<-subset(acrossSub_deltas1, region == "FPl")
+across_9461<-subset(acrossSub_deltas1, region == "9-46")
+across_pmd1<-subset(acrossSub_deltas1, region == "PMd")
+
+######## Let's see if there are any associations between the context encoding response and reported emotional intensity
+um_emo_contextSet_acrossFPl<-lm(um_emo ~ um_contextSet, across_fpl1)
+anova(um_emo_contextSet_acrossFPl)
+cor.test(across_fpl$um_emo, across_fpl$um_contextSet)
+
+### 9-46
+um_emo_contextSet_across946<-lm(um_emo ~ um_contextSet, across_9461)
+anova(um_emo_contextSet_across946)
+cor.test(across_9461$um_emo, across_9461$um_contextSet)
+
+#PMd
+um_emo_contextSet_across_pmd<-lm(um_emo ~ um_contextSet, across_pmd1)
+anova(um_emo_contextSet_across_pmd)
+cor.test(across_pmd1$um_emo, across_pmd1$um_contextSet)
+#################
+
+#######################plotting########################
+##### FPl
+spearman_cor <- cor.test(across_fpl1$um_contextSet, across_fpl1$um_emo, method = "spearman")
+rho <- round(spearman_cor$estimate, 3)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+dev.new()
+fpl_emo_earlyResp_um <- ggplot(across_fpl1, aes(x = um_contextSet, y = um_emo)) +
+  geom_point(color = "#d4a0df", size = 1.75, alpha = 0.9) + geom_text(aes(x = Inf, y = Inf, label = paste("ρ = ", rho,",  p = ", p_value, sep="")),hjust = 1.1, vjust = 2, size = 3.5, color = "#949494") +
+  stat_smooth(method = "lm", color = "#d4a0df", size = 1, fill="#e1e1e1") +  # Customize regression line
+  labs(
+    x = "FPl Context Encoding\n\u0394 Unpleasant \u2212 Mild",
+    y = "Reported Emotional Intensity\n\u0394 Unpleasant \u2212 Mild",
+  ) +
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12),
+        legend.position = "none")+ scale_y_continuous(labels = ~sub("-", "−", .x))+ scale_x_continuous(labels = ~sub("-", "−", .x))
+dev.new()
+cairo_pdf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/brain-behavior/FPl_umDelta_contextSetting_Emo_acrossSubs_wider.pdf',height=5, width=5)
+plot(fpl_emo_earlyResp_um)
+dev.off()
+
+####mid-LPFC
+spearman_cor <- cor.test(across_9461$um_contextSet, across_9461$um_emo, method = "spearman")
+rho <- round(spearman_cor$estimate, 3)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+dev.new()
+ba946_emo_earlyResp_um <- ggplot(across_9461, aes(x = um_contextSet, y = um_emo)) +
+  geom_point(color = "#99c1eb", size = 1.5, alpha = 0.9) + 
+  geom_text(
+       aes(x = Inf, y = Inf, label = paste("ρ = ", rho, ", p = ", p_value,sep="")),
+       hjust = 1.1, vjust = 2, size = 3.5, color = "#949494"
+     ) + # Customize points
+  stat_smooth(method = "lm", color = "#99c1eb", size = 1, fill="#e1e1e1") +  # Customize regression line
+  labs(
+    x = "mid-LPFC Context Encoding\n\u0394 Unpleasant \u2212 Mild",
+    y = "Reported Emotional Intensity\n\u0394 Unpleasant \u2212 Mild",
+  ) +
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),      # Font size for x-axis label
+        axis.title.y = element_text(size = 14),      # Font size for y-axis label
+        axis.text.x = element_text(size = 12),       # Font size for x-axis text
+        axis.text.y = element_text(size = 12),
+        legend.position = "none")+ scale_y_continuous(labels = ~sub("-", "−", .x))+ scale_x_continuous(labels = ~sub("-", "−", .x))
+
+# Print the plot
+cairo_pdf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/brain-behavior/midLPFC_umDelta_contextSetting_Emo_acrossSubs_final.pdf',height=5, width=5)
+plot(ba946_emo_earlyResp_um)
+dev.off()
+
+#####PMd
+spearman_cor <- cor.test(across_pmd1$um_contextSet, across_pmd1$um_emo, method = "spearman")
+rho <- round(spearman_cor$estimate, 3)
+p_value <- round(a$`Pr(>F)`[1], 3)
+
+dev.new()
+pmd_emo_earlyResp_um <- ggplot(across_pmd1, aes(x = um_contextSet, y = um_emo)) +
+  geom_point(color = "#9cc5ac", size = 1.5, alpha = 0.85) + 
+  geom_text(
+       aes(x = Inf, y = Inf, label = paste("ρ = ", rho, ", p = ", p_value, sep="")),
+       hjust = 1.1, vjust = 2, size = 3.5, color = "#949494"
+     ) + 
+  stat_smooth(method = "lm", color = "#9cc5ac", size = 1, fill="#e1e1e1") +  # Customize regression line
+  labs(
+    x = "PMd Context Encoding\n\u0394 Unpleasant \u2212 Mild",
+    y = "Reported Emotional Intensity\n\u0394 Unpleasant \u2212 Mild",
+  ) +
+  theme_classic(base_size = 14)+
+  theme(axis.title.x = element_text(size = 14),      # Font size for x-axis label
+        axis.title.y = element_text(size = 14),      # Font size for y-axis label
+        axis.text.x = element_text(size = 12),       # Font size for x-axis text
+        axis.text.y = element_text(size = 12),
+        legend.position = "none") + scale_y_continuous(labels = ~sub("-", "−", .x))+ scale_x_continuous(labels = ~sub("-", "−", .x))
+
+# Print the plot
+cairo_pdf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/brain-behavior/PMd_umDelta_contextSetting_Emo_acrossSubs_final.pdf',height=5, width=5)
+plot(pmd_emo_earlyResp_um)
+dev.off()
+
+##########################################################################################
+########## test the correlation coefficients ####
+# Reshape data to wide format (so each region's um_contextSet is in a separate column)
+library(tidyr)
+acrossSub_deltas1<-read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/data/brain-behavior/neuro_behavior_acrossSubs_deltas1.csv")
+acrossSub_deltas_sub<-subset(acrossSub_deltas1, select=c(region, sub,um_contextSet, um_emo))
+acrossSub_deltas_fpl<-subset(acrossSub_deltas_sub, region == "FPl")
+acrossSub_deltas_946<-subset(acrossSub_deltas_sub, region == "9-46")
+acrossSub_deltas_pmd<-subset(acrossSub_deltas_sub, region == "PMd" )
+
+acrossSub_deltas_fpl$um_contextFPl<-acrossSub_deltas_fpl$um_contextSet
+acrossSub_deltas_fpl<-subset(acrossSub_deltas_fpl, select=-c(um_contextSet))
+
+acrossSub_deltas_946$um_context946<-acrossSub_deltas_946$um_contextSet
+acrossSub_deltas_946<-subset(acrossSub_deltas_946, select=-c(um_contextSet))
+
+acrossSub_deltas_pmd$um_contextPMd<-acrossSub_deltas_pmd$um_contextSet
+acrossSub_deltas_pmd<-subset(acrossSub_deltas_pmd, select=-c(um_contextSet))
+
+betas1<-left_join(acrossSub_deltas_fpl, acrossSub_deltas_946,by=c("sub"))
+betas<-left_join(acrossSub_deltas_pmd,betas1,by=c("sub"))
+betas<-subset(betas, select=-c(um_emo.y, um_emo.x, region.y, region.x, region))
+betaList<-list()
+betaList$PFC <- betas
+
+cocor(~um_contextPMd + um_emo | um_contextFPl + um_emo, betaList$PFC) # p > 0.119
+cocor(~um_contextFPl + um_emo | um_context946 + um_emo, betaList$PFC) # p > 0.63
+cocor(~um_contextPMd + um_emo | um_context946 + um_emo, betaList$PFC)
+```
+
+
+For extra summary figure of PFC regions:
+
+```{r}
+library(lme4)
+fir_contextEncode_slope <- read.csv("/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/neuro/FIR_contextEncode_slope.csv")
+fir_pfc <- subset(fir_contextEncode_slope, region %in% c( '9', '46', 'FPm', '8A', '8B', '8m', '32d', '32pl', 'FPl', 'PMd', '9-46'))
+fir_pfc <- subset(fir_pfc, select = -c(X))
+output_dir <- "/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/supplementaryPFC/lmer1"
+
+fir_sub <- subset(fir_pfc, region == 'PMd')
+sm <- lmer(contextSet ~ shock * control + (1|sub) + (1|run), fir_sub)
+anova(sm)
+effectsize::eta_squared(sm, partial=TRUE) # get partial eta-squared values
+
+
+fir_sub <- subset(fir_pfc, region == '32pl')
+sm <- lmer(contextSet ~ shock * control + (1|sub) + (1|run), fir_sub)
+anova(sm)
+effectsize::eta_squared(sm, partial=TRUE) # get partial eta-squared values
+
+
+fir_sub <- subset(fir_pfc, region == '46')
+sm <- lmer(contextSet ~ shock * control + (1|sub) + (1|run), fir_sub)
+anova(sm)
+effectsize::eta_squared(sm, partial=TRUE) # get partial eta-squared values
+
+fir_sub <- subset(fir_pfc, region == 'FPm')
+sm <- lmer(contextSet ~ shock * control + (1|sub) + (1|run), fir_sub)
+anova(sm)
+effectsize::eta_squared(sm, partial=TRUE) # get partial eta-squared values
+
+######
+#slope
+fir_sub <- subset(fir_pfc, region == '8A')
+sm <- lmer(slope ~ shock * control + (1|sub) + (1|run), fir_sub)
+anova(sm)
+effectsize::eta_squared(sm, partial=TRUE) # get partial eta-squared values
+
+fir_sub <- subset(fir_pfc, region == '32d')
+sm <- lmer(slope ~ shock * control + (1|sub) + (1|run), fir_sub)
+anova(sm)
+effectsize::eta_squared(sm, partial=TRUE) # get partial eta-squared values
+
+fir_sub <- subset(fir_pfc, region == '9-46')
+sm <- lmer(slope ~ shock * control + (1|sub) + (1|run), fir_sub)
+anova(sm)
+effectsize::eta_squared(sm, partial=TRUE) # get partial eta-squared values
+
+
+
+
+for (reg in unique(fir_pfc$region)) {
+  fir_sub <- subset(fir_pfc, region == reg)
+  
+  ce_model <- lmer(contextSet ~ shock * control + (1 | sub) + (1 | run), fir_sub)
+  ce_a <- anova(ce_model)
+  slope_model <- lmer(slope ~ shock * control + (1 | sub) + (1 | run), fir_sub)
+  slope_a <- anova(slope_model)
+  
+  ce_pvals <- ce_a$`Pr(>F)`[-1]  # Exclude Intercept
+  slope_pvals <- slope_a$`Pr(>F)`[-1]  # Exclude Intercept
+  
+  if (any(ce_pvals < 0.70, na.rm = TRUE) || any(slope_pvals < 0.70, na.rm = TRUE)) {
+    output_file <- file.path(output_dir, paste0("anova_results_", reg, ".txt"))
+    sink(output_file)
+    cat("ANOVA Results for Region:", reg, "\n\n")
+    cat("Context Encoding Model ANOVA:\n")
+    print(ce_a)
+    cat("\nSlope Model ANOVA:\n")
+    print(slope_a)
+    cat("\n-----------------------------------\n")
+    sink()
+  }
+}
+## make a table
+library(kableExtra)
+df <- data.frame(col1 = c("Region", "6r", "6v", "8A", "8m", "32", "32d", "32pl", "44d", "44v", "45", "46", "FPm", "RCZ", "RCZa", "RCZp"),
+                  col2 = c("ContextEncode Shock","<0.001", "<0.001", "0.02", "x", "0.04", "x", "0.03", "x", "0.01", "0.02", "<0.001", "x", "<0.001", "0.003", "<0.001"),
+                  col3 = c("ContextEncode Control", "0.02", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "0.04"),
+                  col4 = c("ContextEncode Shock*Control", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "0.04", "x", "x", "x"),
+                  col5 = c("Slope Shock","x", "x", "0.003", "0.04", "x", "0.03", "x", "<0.001", "x", "x", "x", "x", "x", "x", "x"),
+                  col6 = c("Slope Control", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x"),
+                  col7 = c("Slope Shock*Control", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x"))
+colnames(df) <- NULL
+kable(df, row.names = F) %>%
+     column_spec (1:7, border_left = T, border_right = T) %>% 
+     kable_styling()
+``` 
+

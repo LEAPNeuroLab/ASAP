@@ -1,0 +1,234 @@
+---
+title: "PFC Paper - Stasiak & Lapate 2024: Behavioral Analyses"
+output: hrbrthemes::ipsum_pdf
+---
+First load our packages
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,  dev = "cairo_pdf")
+
+library(DescTools)
+library(smplot2)
+library(emmeans)
+library(lme4)
+library(dplyr)
+library(Rmisc)
+library(ggplot2)
+library(hrbrthemes)
+library(viridis)
+library(sjPlot)
+library(sjmisc)
+library(lmerTest)
+```
+
+Now let's run behavioral analyses!
+```{r}
+behavior_sub_noOutl<-read.csv( "/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/Manuscripts/PFC_Paper/July24/final/data/behavior/cleanBehavior.csv")
+###########################################################
+################### emotion ###################
+behavior_sub_noOutl$shock <- factor(behavior_sub_noOutl$shock)
+behavior_sub_noOutl$shock <- relevel(behavior_sub_noOutl$shock, ref = "Unpleasant")
+behavior_sub_noOutl$control <- factor(behavior_sub_noOutl$control)
+behavior_sub_noOutl$control <- relevel(behavior_sub_noOutl$control, ref = "Controllable")
+
+emo_lmer<-lmer(emo~shock*control + (shock + control|sub) + (1|run), behavior_sub_noOutl)
+anova(emo_lmer)
+
+###### get effect size for shock ME
+emo_emm_shock <- emmeans(emo_lmer, pairwise ~ shock)#get pairwise contrasts
+summary(emo_emm_shock, infer = c(TRUE, TRUE))#get 95% CI
+myData_agg<-behavior_sub_noOutl%>% group_by(sub,shock) %>% dplyr::summarize(emo= mean(emo))%>%as.data.frame()
+round(cohensD(emo ~ shock, data=myData_agg,method = "paired"),3) #d = 0.943
+
+###### get effect size for control ME
+emo_emm_contr <- emmeans(emo_lmer, pairwise ~ control)#get pairwise contrasts
+summary(emo_emm_contr, infer = c(TRUE, TRUE))#get 95% CI
+myData_agg<-behavior_sub_noOutl%>% group_by(sub,control) %>% dplyr::summarize(emo= mean(emo))%>%as.data.frame()
+round(cohensD(emo ~ control, data=myData_agg,method = "paired"),3) #d = 0.943
+
+########get effect size for interaction
+emo_emm_int <- emmeans(emo_lmer, pairwise ~ shock*control)#get pairwise contrasts
+summary(emo_emm_int, infer = c(TRUE, TRUE))
+myData_agg_int<-behavior_sub_noOutl%>% group_by(sub, shock, control) %>% dplyr::summarize(emo= mean(emo))%>%as.data.frame()
+ContrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Controllable",]
+UncontrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Uncontrollable",]
+ContrMild <- myData_agg_int[myData_agg_int$shock=="Mild"&myData_agg_int$control=="Controllable",]
+UncontrMild <- myData_agg_int[myData_agg_int$shock=="Mild"&myData_agg_int$control=="Uncontrollable",]
+
+#Control Unpl - Uncontrol Unpl
+round(cohensD(ContrUnpl$emo, UncontrUnpl$emo,method = "paired"),3)
+#Control Unpl - Control Mild
+round(cohensD(ContrUnpl$emo, ContrMild$emo,method = "paired"),3)
+#Control Unpl - Uncontrol Mild
+round(cohensD(ContrUnpl$emo, UncontrMild$emo,method = "paired"),3)
+
+#############################################
+library(dplyr, warn.conflicts = FALSE)
+emo_avg<-behavior_sub_noOutl %>%
+    group_by(sub, shock, control,condition) %>%
+    dplyr::summarise(avg = mean(emo), count = n(), .groups = 'drop') %>%as.data.frame()
+emo_avg<-subset(emo_avg,select=-c(count))
+emo_SE <- summarySEwithin(data=emo_avg, measurevar ='avg', betweenvars=NULL, withinvars=c( 'shock', 'control', 'condition'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95) #.drop=TRUE
+emo_SE$shock_control <- as.factor(paste(emo_SE$shock,emo_SE$control))
+emo_SE$shock_control <- factor(emo_SE$shock_control,levels = c("Mild Controllable","Mild Uncontrollable", "Unpleasant Controllable", "Unpleasant Uncontrollable"))
+#######################
+## PLOT BEHAVIOR
+library(ggsignif)  # grey color e6e3e6
+dev.new(width=5, height=3)
+emo_bar<-ggplot(emo_SE, aes(fill=shock, y=avg, x=control)) +
+  geom_bar(position=position_dodge(.4), size=0.4,  width=0.4, alpha = 0.8, color = "black", stat= "identity") +
+  geom_errorbar(position=position_dodge(.4),size=.5,width=.1,
+                color = "black",aes(ymin=avg-se, ymax=avg+se)) +
+  ylab("Reported Emotional Intensity")+
+  xlab("Condition")+ 
+  coord_cartesian(ylim=c(1, 3.5))+
+  scale_fill_manual(name = "Shock",
+                    labels = c("Mild", "Unpleasant",
+                               "", ""), values = c("#ececec","#f8d27b", "#ececec","#f8d27b")) + # f8d27b # ececec # tan f1efe3
+
+  theme_classic(base_size = 14)+ scale_x_discrete(labels=c("Controllable", "Uncontrollable"), expand = c(0.3, 0.3)) +
+  theme(axis.title.x = element_text(size = 14),      # Font size for x-axis label
+        axis.title.y = element_text(size = 14),      # Font size for y-axis label
+        axis.text.x = element_text(size = 11),       # Font size for x-axis text
+        axis.text.y = element_text(size = 13), legend.position = "none")  #legend.key.width = unit(0.4,"cm"),legend.key.height = unit(0.4,"cm"),legend.text = element_text(size = 9.5), legend.title = element_text(size = 10) , legend.position = "right")
+plot(emo_bar)
+fname=sprintf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/behavior/emo_barplot.pdf')
+ggsave(fname,height=3.25, width=3.25, dpi=300)
+
+
+# Extract the legend from the plot
+get_legend <- function(my_ggplot) {
+  tmp <- ggplot_gtable(ggplot_build(my_ggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  tmp$grobs[[leg]]
+}
+legend <- get_legend(emo_bar)
+fname <- '/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/behavior/emo_legend.pdf'
+ggsave(fname, plot = legend, height = 0.75, width = 1, dpi = 300)
+```
+
+
+###########################################################
+################### Accuracy ###################
+```{r}
+behavior_sub_noOutl$shock <- factor(behavior_sub_noOutl$shock)
+behavior_sub_noOutl$shock <- relevel(behavior_sub_noOutl$shock, ref = "Unpleasant")
+behavior_sub_noOutl$control <- factor(behavior_sub_noOutl$control)
+behavior_sub_noOutl$control <- relevel(behavior_sub_noOutl$control, ref = "Controllable")
+
+acc_lmer<-lmer(acc~shock*control + (shock+control|sub) + (1|run), behavior_sub_noOutl)
+anova(acc_lmer) # main effect of control
+effectsize::eta_squared(acc_lmer, partial=TRUE) # get partial eta-squared values
+
+###### get effect size for control ME
+acc_emm_contr <- emmeans(acc_lmer, pairwise ~ control)#get pairwise contrasts
+summary(acc_emm_contr, infer = c(TRUE, TRUE))#get 95% CI
+myData_agg<-behavior_sub_noOutl%>% group_by(sub,control) %>% dplyr::summarize(acc= mean(acc))%>%as.data.frame()
+round(cohensD(acc ~ control, data=myData_agg,method = "paired"),3)
+
+#############################################
+library(dplyr, warn.conflicts = FALSE)
+acc_avg<-behavior_sub_noOutl %>%
+    group_by(sub, shock, control, condition) %>%
+    dplyr::summarise(avg = mean(acc), count = n(), .groups = 'drop') %>%as.data.frame()
+acc_avg$avg <-acc_avg$avg * 100
+
+acc_avg<-subset(acc_avg,select=-c(count))
+acc_SE <- summarySEwithin(data=acc_avg, measurevar ='avg', betweenvars=NULL, withinvars=c( 'shock', 'control', 'condition'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95) #.drop=TRUE
+acc_SE$shock_control <- as.factor(paste(acc_SE$shock,acc_SE$control))
+acc_SE$shock_control <- factor(acc_SE$shock_control,levels = c("Mild Controllable","Mild Uncontrollable", "Unpleasant Controllable", "Unpleasant Uncontrollable"))
+
+#######################
+## PLOT BEHAVIOR
+acc_bar<-ggplot(acc_SE, aes(fill=shock, y=avg, x=control)) +
+  geom_bar(position=position_dodge(.4), size=0.4,  width=0.4, alpha = 0.8, color = "black", stat= "identity") +
+  geom_errorbar(position=position_dodge(.4),size=.5,width=.1,
+                color = "black",aes(ymin=avg-se, ymax=avg+se)) +
+  ylab("Task Accuracy (%)")+
+  xlab("Condition")+  
+  coord_cartesian(ylim=c(30, 70))+
+  scale_fill_manual(name = "Shock",
+                    labels = c("Mild", "Unpleasant",
+                               "", ""), values = c("#ececec","#f8d27b", "#ececec","#f8d27b")) +
+
+  theme_classic(base_size = 14)+ scale_x_discrete(labels=c("Controllable", "Uncontrollable"), expand = c(0.3, 0.3)) +
+  theme(axis.title.x = element_text(size = 14),      # Font size for x-axis label
+        axis.title.y = element_text(size = 14),      # Font size for y-axis label
+        axis.text.x = element_text(size = 11),       # Font size for x-axis text
+        axis.text.y = element_text(size = 13),       # Font size for y-axis text
+        legend.position = "none")
+plot(acc_bar)
+fname=sprintf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/behavior/acc_barplot.png')
+ggsave(fname,height=3.25, width=3.25, dpi=300)
+```
+
+
+###########################################################
+################### Movement Time ###################
+```{r}
+### Make sure to use RT dataframe - or filter by rt!=0
+behavior_sub_noOutl_rt<-subset(behavior_sub_noOutl, rt!=0)
+behavior_sub_noOutl_rt$shock <- factor(behavior_sub_noOutl_rt$shock)
+behavior_sub_noOutl_rt$shock <- relevel(behavior_sub_noOutl_rt$shock, ref = "Unpleasant")
+behavior_sub_noOutl_rt$control <- factor(behavior_sub_noOutl_rt$control)
+behavior_sub_noOutl_rt$control <- relevel(behavior_sub_noOutl_rt$control, ref = "Controllable")
+
+rt_lmer<-lmer(rt~shock*control + (shock+control|sub) + (1|run), behavior_sub_noOutl_rt)
+anova(rt_lmer)
+emmeans(rt_lmer, pairwise~control*shock)
+effectsize::eta_squared(rt_lmer, partial=TRUE) # get partial eta-squared values
+
+###### get effect size for shock ME
+rt_emm_shock <- emmeans(rt_lmer, pairwise ~ shock)#get pairwise contrasts
+summary(rt_emm_shock, infer = c(TRUE, TRUE))#get 95% CI
+myData_agg<-behavior_sub_noOutl_rt%>% group_by(sub,shock) %>% dplyr::summarize(rt= mean(rt))%>%as.data.frame()
+round(cohensD(rt ~ shock, data=myData_agg,method = "paired"),3)
+
+#####get effect size for interaction
+rt_emm_int <- emmeans(rt_lmer, pairwise ~ shock*control)#get pairwise contrasts
+summary(rt_emm_int, infer = c(TRUE, TRUE))#get 95% CI
+
+myData_agg_int<-behavior_sub_noOutl_rt%>% group_by(sub, shock, control) %>% dplyr::summarize(rt= mean(rt))%>%as.data.frame()
+UncontrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Uncontrollable",]
+UncontrMild <- myData_agg_int[myData_agg_int$shock=="Mild"&myData_agg_int$control=="Uncontrollable",]
+ContrUnpl <- myData_agg_int[myData_agg_int$shock=="Unpleasant"&myData_agg_int$control=="Controllable",]
+ContrUnpl<-subset(ContrUnpl, sub!=10)
+#Uncontrol Unpl - Uncontrol Mild
+UncontrUnpl<-subset(UncontrUnpl, sub!=19)
+round(cohensD(UncontrUnpl$rt, UncontrMild$rt,method = "paired"),3)
+#Uncontrol Unpl - Control Unpl
+round(cohensD(UncontrUnpl$rt, ContrUnpl$rt,method = "paired"),3) 
+
+################################################################################################################################################################################################################################
+library(dplyr, warn.conflicts = FALSE)
+rt_avg<-behavior_sub_noOutl_rt %>%
+    group_by(sub, shock, control, condition) %>%
+    dplyr::summarise(avg = mean(rt), count = n(), .groups = 'drop') %>%as.data.frame()
+rt_avg<-subset(rt_avg,select=-c(count))
+rt_SE <- summarySEwithin(data=rt_avg, measurevar ='avg', betweenvars=NULL, withinvars=c( 'shock', 'control', 'condition'),
+    idvar='sub', na.rm=FALSE, conf.interval=.95) #.drop=TRUE
+rt_SE$shock_control <- as.factor(paste(rt_SE$shock,rt_SE$control))
+rt_SE$shock_control <- factor(rt_SE$shock_control,levels = c("Mild Controllable","Mild Uncontrollable", "Unpleasant Controllable", "Unpleasant Uncontrollable"))
+
+rt_bar<-ggplot(rt_SE, aes(fill=shock, y=avg, x=control)) +
+  geom_bar(position=position_dodge(.4), size=0.4,  width=0.4, alpha = 0.8, color = "black", stat= "identity") +
+  geom_errorbar(position=position_dodge(.4),size=.4,width=.1,
+                color = "black",aes(ymin=avg-se, ymax=avg+se)) +
+  ylab("Reaction Time (s)")+
+  xlab("Condition")+  
+  coord_cartesian(ylim=c(0.75, 0.875))+   scale_y_continuous(breaks = c(0.75, 0.8, 0.85)) +  # Set specific y-axis ticks
+  scale_fill_manual(name = "Shock",
+                    labels = c("Mild", "Unpleasant",
+                               "", ""), values = c("#ececec","#f8d27b", "#ececec","#f8d27b")) +
+
+  theme_classic(base_size = 14)+ scale_x_discrete(labels=c("Controllable", "Uncontrollable"), expand=c(0.3, 0.3)) +
+  theme(axis.title.x = element_text(size = 14),      # Font size for x-axis label
+        axis.title.y = element_text(size = 14),      # Font size for y-axis label
+        axis.text.x = element_text(size = 11),       # Font size for x-axis text
+        axis.text.y = element_text(size = 13),       # Font size for y-axis text
+        legend.position = "none")
+plot(rt_bar)
+fname=sprintf('/Users/joannestasiak/Dropbox/LEAP_Neuro_Lab/researchProjects/joanne/ASAP/PFC_Paper/July24/final/figures/behavior/rt_barplot.pdf')
+ggsave(fname,height=3.25, width=3.25, dpi=300)
+```
