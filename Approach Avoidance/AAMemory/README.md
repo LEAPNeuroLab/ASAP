@@ -1,6 +1,6 @@
 **Author:** Jingyi Wang, PhD (wangjingyimayer@gmail.com)
 
-This pipeline calculates three neural metrics (between-trial pattern correlation, within-trial pattern correlation, and trial-wise univariate activity) and computes the relationship between these three neural metrics with amygdala activation and temporal memory accuracy. The "masks" folder contains all the MNI masks used in the current study. The "ImgStimlist.txt" contains the list of image names included in the current study, from the IAPS and OASIS datasets. Detailed descriptions of each processing script, as well as the steps for properly using each script, can be found below:
+This pipeline calculates three neural metrics (between-trial pattern correlation, within-trial pattern correlation, and trial-wise univariate activity) and computes the relationship between these three neural metrics with amygdala activation and temporal memory accuracy. The "masks" folder contains all the MNI masks and Freesurfer labels used in the current study. The "ImgStimlist.txt" contains the list of image names included in the current study, from the IAPS and OASIS datasets. Detailed descriptions of each processing script, as well as the steps for properly using each script, can be found below:
 
 ## Sort behavioral data
 
