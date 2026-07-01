@@ -1,0 +1,635 @@
+---
+title: "AAfMRI_trialwise_RSA"
+author: "Jingyi"
+date: "March/20/2024"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls(all=TRUE)) 
+library(afex)
+library(emmeans)
+library(knitr)
+library(tidyverse)
+library(compute.es)
+library(car)
+library(ggplot2)
+library(multcomp)
+library(pastecs)
+library(WRS2)
+library(Hmisc)
+library(tidyverse)
+library(SuppDists)
+library(ggpubr)
+library(readxl)
+library(ez)
+library(nlme)
+library(dplyr)
+library(pacman)
+p_load(reshape2, viridis, hrbrthemes,MASS,gridExtra,interactions)
+knitr::opts_chunk$set(echo = TRUE)
+`select` <- dplyr::select
+`recode` <- dplyr::recode
+options(contrasts=c("contr.sum","contr.poly"))
+options(max.print = 10000)
+```
+```{r}
+# Function to replace strings
+transform_string <- function(s){
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm_Anterior", "aHPC", s)
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm_Mid", "midHPC", s)
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm_Posterior", "pHPC", s)
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm", "HPC", s)
+  s = gsub("FS_entorhinal_exvivo.thresh", "Entorhinal", s)
+  s = gsub("BA4_exvivo.thresh", "BA4", s)
+  s = gsub("V1_exvivo.thresh", "V1", s)
+  s = gsub("FS_", "", s)
+  s = gsub("Amy_50_bin", "Amygdala", s)
+  s = gsub("Amy_bin50_2mm", "Amygdala", s)
+  s = gsub("AMY", "Amygdala", s)
+  s = gsub("_2mm", "", s)
+  s = gsub("lh.L_", "Left ", s)
+  s = gsub("rh.R_", "Right ", s)  
+    s = gsub("L_", "Left ", s)
+  s = gsub("R_", "Right ", s)
+  s = gsub("perirhinal_exvivo.thresh", "PRC", s)
+  s = gsub("uni_", "", s)
+  # s = gsub("_", " ", s)
+  return (s)  
+}
+```
+
+set group regression plot
+```{r}
+myGroupCorrelation_group_sub <- function(datainit, completevar, Formula1, Formula2, xvar, yvar, xlabel, ylabel, highcolor, modlinecolor, plottitle, fnamepdf, fnamepng, hjust){
+  #Make sure all the rows contain values
+  data <- datainit[complete.cases(datainit[[completevar]]), ]
+  # Create predicted values based on the model
+  tmp_ml <- lmer(Formula1, data = data, REML = FALSE)
+tmp_summary <- summary(tmp_ml)
+tmp_anova <- anova(tmp_ml)
+p_value <- tmp_anova$`Pr(>F)`[1]
+
+  if (round(as.numeric(p_value),3) >= 0.001){
+    labelnow <- paste( " p = ", round(as.numeric(p_value), digits=3))
+    
+  }
+else if (round(as.numeric(p_value), 3) < 0.001){
+  labelnow <- "p < 0.001"
+}
+
+#just to trick the plot. But need to find a better solution
+tmp_ml <- lmer(Formula2, data = data, REML = FALSE)
+data$predictnum <- predict(tmp_ml,variances=list(fixef=TRUE,ranef=FALSE))
+
+# Calculate the range for x and y
+x_range <- range(data[[xvar]], na.rm = TRUE)
+y_range <- range(data$predictnum, na.rm = TRUE)
+
+# Calculate the y-values at the x limits of your data
+intercept <- tmp_summary[["coefficients"]][1]
+slope <- tmp_summary[["coefficients"]][2]
+
+# Endpoints of the line
+y_start <- slope * x_range[1] + intercept
+y_end <- slope * x_range[2] + intercept
+
+## Create a list of colors
+# Extract participant list
+pplst <- unique(data$sub)
+nsub <- length(pplst)
+# Define a list of colors from Blues (one per subject)
+colour_lst2  <- scales::seq_gradient_pal(low = "#FCF5F2", high = highcolor, space = "Lab")(1:nsub/nsub)
+
+# create values for scale colour manual (assign each color to a participant)
+values_lst2 <- setNames(colour_lst2, pplst)
+
+# create plot
+pltnow <- ggplot(data,
+                           aes(x = get(xvar),
+                               y = predictnum,
+                               color = factor(sub), group = factor(sub)))+
+  geom_smooth(method = lm, se=F, size=0.3, alpha=0.5)+
+  scale_color_manual(values = values_lst2)+
+  # geom_abline(aes(intercept=`(Intercept)`, slope=get(xvar)), as.data.frame(t(fixef(tmp_ml))), lwd= 1,col = modlinecolor, size = 3) +
+  geom_segment(aes(x = x_range[1], y = y_start, xend = x_range[2], yend = y_end), 
+               lwd = 1, col = modlinecolor, size = 3) +
+  # coord_cartesian(xlim = c(-2, 1)) +
+  annotate("text", size= 4, x=Inf, y = Inf, label = labelnow,colour = "black",vjust=1.15, hjust=hjust)+
+  ylab(ylabel)+
+  xlab(xlabel)+
+  theme_classic(base_size = 20) +
+  labs(plottitle)+
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(legend.position="none")+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank())
+
+pltnow
+
+ggsave(fnamepdf, width = 5.2, height = 4,dpi=300)
+ggsave(fnamepng, width = 5.2, height = 4, dpi = 600)
+}
+```
+
+
+Set color
+```{r}
+library("colorspace")
+hcl_palettes(plot = TRUE)
+BR<-diverging_hcl(5, palette = "Blue-Red 2")
+
+colorList1 <- c(sequential_hcl(7, palette = "Mint"))
+colorList2 <- c(sequential_hcl(7, palette = "Peach"))
+
+colorList3 <- c(sequential_hcl(5, palette = "Reds"))
+colorList4 <- c(sequential_hcl(5, palette = "Blues"))
+
+list_2color <- c(colorList2[3], colorList1[3])
+list_2color_1 <- c(colorList2[2], colorList1[2])
+
+list_2color_2 <- c(colorList3[3], colorList4[2])
+
+allcolor<-c(colorList2[5], colorList2[2], colorList1[5], colorList1[2])
+allcolorEmoOrder<-c(colorList2[2],colorList1[5],colorList2[5],colorList1[2])
+ 
+Failcolor <- BR[4]
+"#E495A5"
+Succcolor <- BR[2]
+"#9DA8E2"
+Betweencolor <- BR[3]
+
+negcolor <- list_2color[1]
+poscolor <- list_2color[2]
+
+poscolor <- "#64A79A"
+negcolor <- "#EF6D48"
+
+regressline <- "#424242" #another option: "#7F7EBC"; "#86BFDE"
+ribbonline <- "#BEBEBE"
+"#7F7EBC"
+"#86BFDE"
+"#E1E1E1"
+"#BEBEBE"
+highcolor <- sequential_hcl(5, palette = "Grays")[3]
+```
+Merge dataframe from different masks and loop through masks
+```{r}
+# Set working directory to source file location
+setwd("YOURRESULTSDIR/RSA/RSAbymask")
+# Load the data
+HPC <- read_csv("harvardoxford_Hippocampus_bin60_2mm_all_rsas_betas_whitened_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+HPC <- HPC[!HPC$sub %in% c("007", "013","027", "081", "066", "057"),]
+
+
+FPl <- read_csv("FS_FPl_all_rsas_betas_whitened_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+FPl <- FPl[!FPl$sub %in% c("007", "013", "027", "081", "066", "057"),]
+```
+
+Merge
+```{r}
+myDataAll <- dplyr::bind_rows(HPC, FPl)
+nrow(myDataAll)
+length(unique(myDataAll$sub))
+```
+
+
+Add emotion change order column
+```{r}
+myDataAll$triallagnum <- myDataAll$triallag
+myDataAll$triallagnum <- as.numeric(myDataAll$triallagnum)
+myDataAll <- myDataAll %>% mutate(EmoOrder = case_when(triallagnum > 0 & StimVal1=="neg" & StimVal2 =="pos"~"neg2pos", triallagnum < 0 & StimVal1=="neg" & StimVal2 =="pos"~"pos2neg", triallagnum > 0 & StimVal1=="pos" & StimVal2 =="neg"~"pos2neg", triallagnum < 0 & StimVal1=="pos" & StimVal2 =="neg"~"neg2pos", StimVal1=="neg" & StimVal2 =="neg"~"neg2neg", StimVal1=="pos" & StimVal2 =="pos"~"pos2pos"))
+myDataAll$EmoOrder <- as.factor(myDataAll$EmoOrder)
+nrow(myDataAll)
+
+myDataAll <- myDataAll %>% mutate(firstval = case_when(EmoOrder=="pos2pos"|EmoOrder=="pos2neg" ~ "Positive", EmoOrder=="neg2pos"|EmoOrder=="neg2neg" ~ "Negative"))
+myDataAll$firstval <- as.factor(myDataAll$firstval)
+
+myDataAll <- myDataAll %>% mutate(secondval = case_when(EmoOrder=="pos2pos"|EmoOrder=="neg2pos" ~ "Positive", EmoOrder=="pos2neg"|EmoOrder=="neg2neg" ~ "Negative"))
+myDataAll$secondval <- as.factor(myDataAll$secondval)
+
+myDataAll <- myDataAll %>% mutate(PerciseBiasSign1 = case_when(Tprecise_bias1> 0 ~ 1, Tprecise_bias1 < 0 ~ -1))
+myDataAll$PerciseBiasSign1 <- as.factor(myDataAll$PerciseBiasSign1)
+levels(myDataAll$PerciseBiasSign1) <- c("End", "Beginning")
+
+myDataAll <- myDataAll %>% mutate(PerciseBiasSign2 = case_when(Tprecise_bias2> 0 ~ 1, Tprecise_bias2 < 0 ~ -1))
+myDataAll$PerciseBiasSign2 <- as.factor(myDataAll$PerciseBiasSign2)
+levels(myDataAll$PerciseBiasSign2) <- c("End", "Beginning")
+
+myDataAll <- myDataAll %>% dplyr::mutate(triallagsign = case_when(triallagnum > 0 ~ 1, triallagnum < 0 ~ -1))
+myDataAll$triallagsign <- as.factor(myDataAll$triallagsign)
+```
+
+**reverse the Tprecise_bias so that Estimates - Actual position**
+Larger bias -> towards End
+Smaller bias -> towards beginning
+```{r}
+myDataAll$Tprecise_bias1 <- (-1) * myDataAll$Tprecise_bias1
+myDataAll$Tprecise_bias2 <- (-1) * myDataAll$Tprecise_bias2
+```
+
+Set factors
+```{r}
+myDataAll$aromn1 <- as.numeric(myDataAll$aromn1)
+myDataAll$valmn1 <- as.numeric(myDataAll$valmn1)
+myDataAll$EmoChange <- as.factor(myDataAll$EmoChange)
+myDataAll$StimVal1 <- as.factor(myDataAll$StimVal1)
+myDataAll$PerciseBiasFlag1 <- as.factor(myDataAll$PerciseBiasFlag1)
+myDataAll$PercisepChanceFlag1 <- as.factor(myDataAll$PercisepChanceFlag1)
+myDataAll$RunBias1Flag1 <- as.factor (myDataAll$RunBias1Flag1)
+myDataAll$RunBias2Flag1 <- as.factor(myDataAll$RunBias2Flag1)
+myDataAll$Tprecise_bias1 <- as.numeric(myDataAll$Tprecise_bias1)
+myDataAll$trial1 <- as.factor(myDataAll$trial1)
+myDataAll$Trun_bias1<-as.numeric(myDataAll$Trun_bias1)
+myDataAll$Trun_biasabs1<-as.numeric(myDataAll$Trun_biasabs1)
+myDataAll$sub <- as.numeric(as.character(myDataAll$sub))
+myDataAll$triallag <- as.factor(myDataAll$triallag)
+myDataAll$DistanceIndex <- as.numeric(myDataAll$DistanceIndex)
+myDataAll$corr <- as.numeric(myDataAll$corr)
+myDataAll$corr_z <- as.numeric(myDataAll$corr_z)
+myDataAll$ReconMem1 <- as.factor(myDataAll$ReconMem1)
+levels(myDataAll$ReconMem1) <- c("Recognized", "Forgotten")
+myDataAll$ReconMem2 <- as.factor(myDataAll$ReconMem2)
+levels(myDataAll$ReconMem2) <- c("Recognized", "Forgotten")
+myDataAll$ConfReconMem1 <- as.numeric(myDataAll$ConfReconMem1)
+myDataAll$ConfReconMem2 <- as.numeric(myDataAll$ConfReconMem2)
+```
+
+add actiongoal column
+```{r}
+myDataAll <- myDataAll %>% mutate(ActionGoal = case_when(condition1 == "neg_app" ~ "Apporach", condition1 == "pos_app" ~ "Apporach", condition1 == "neg_avoid" ~ "Avoid", condition1 == "pos_avoid" ~ "Avoid"))
+myDataAll$ActionGoal <- as.factor(myDataAll$ActionGoal)
+
+myDataAll <- myDataAll %>% mutate(ActionGoal1 = case_when(condition1 == "neg_app" ~ "Apporach", condition1 == "pos_app" ~ "Apporach", condition1 == "neg_avoid" ~ "Avoid", condition1 == "pos_avoid" ~ "Avoid"))
+myDataAll$ActionGoal1 <- as.factor(myDataAll$ActionGoal1)
+
+myDataAll <- myDataAll %>% mutate(ActionGoal2 = case_when(condition2 == "neg_app" ~ "Apporach", condition2 == "pos_app" ~ "Apporach", condition2 == "neg_avoid" ~ "Avoid", condition2 == "pos_avoid" ~ "Avoid"))
+myDataAll$ActionGoal2 <- as.factor(myDataAll$ActionGoal2)
+
+myDataAll <- myDataAll %>% mutate(ActionChange = case_when(ActionGoal1=="Apporach"&ActionGoal2=="Apporach" ~ "non-change", ActionGoal1=="Avoid"&ActionGoal2=="Avoid" ~ "non-change", ActionGoal1=="Apporach"&ActionGoal2=="Avoid" ~ "change", ActionGoal1=="Avoid"&ActionGoal2=="Apporach" ~ "change"))
+myDataAll$ActionChange <- as.factor(myDataAll$ActionChange)
+```
+
+add absolute LAG column
+```{r}
+myDataAll$triallagabs <- abs(myDataAll$triallagnum)
+myDataAll$triallagabs <- as.factor(myDataAll$triallagabs)
+```
+
+##Load univariate betas with pre-whitten values
+```{r}
+AMY_whitten <- read.csv("YOURRESULTSDIR/AA_fMRIAnalyses/fMRIAnalysis/AMY_uni/Amy_50_bin_univariate.csv")
+AMY_whitten <- AMY_whitten[AMY_whitten$mask=="Amy_50_bin",]
+nrow(AMY_whitten)
+```
+Merge
+```{r}
+colnames(AMY_whitten) <- c("sub", "mask", "run", "trial1", "ImgStim1", "value_AMY", "uni_whiten_AMY")
+AMY_whitten <- AMY_whitten %>% select("sub", "run", "trial1", "ImgStim1", "uni_whiten_AMY")
+AMY_whitten$trial1 <- as.factor(AMY_whitten$trial1)
+myDataAll <- dplyr::left_join(myDataAll, AMY_whitten, by = c("sub", "run", "trial1", "ImgStim1"))
+nrow(myDataAll)
+```
+
+##Add the ImgSim column
+```{r}
+#load the image similarity matrix
+ImgSim <- read.csv("YOURRESULTSDIR/SemanticSimilarityStim/image_pair/corr_mat/ImageSimilarity.csv", header = TRUE)
+```
+reshape the matrix
+```{r}
+# 1. Make imgID the rownames and remove it from columns
+rownames(ImgSim) <- ImgSim$imgID
+ImgSim$imgID <- NULL
+
+# 2. Rename the column names to match the rownames (symmetric matrix)
+colnames(ImgSim) <- rownames(ImgSim)
+
+# 3. Melt the matrix to long format (full matrix)
+ImgSim_long <- reshape2::melt(as.matrix(ImgSim), varnames = c("ImgStim1", "ImgStim2"), value.name = "value")
+```
+
+Add the ImgSemantic column
+```{r}
+myDataAll <- myDataAll %>%
+  rowwise() %>%
+ mutate(
+    stimA = min(ImgStim1, ImgStim2),
+    stimB = max(ImgStim1, ImgStim2)
+  ) %>%
+  ungroup() %>%
+  dplyr::left_join(ImgSim_long, by = c("ImgStim1" = "ImgStim1", "ImgStim2" = "ImgStim2")) 
+# %>%
+myDataAll <- myDataAll %>% dplyr::rename(ImgSemantic = value)
+myDataAll$ImgSemantic <- as.numeric(myDataAll$ImgSemantic)
+```
+```{r}
+myDataAll$residTprecise1 <- as.numeric(myDataAll$residTprecise1)
+myDataAll$residTprecise2 <- as.numeric(myDataAll$residTprecise2)
+
+myDataAll$residTpreciseabs1 <- as.numeric(myDataAll$residTpreciseabs1)
+myDataAll$residTpreciseabs2 <- as.numeric(myDataAll$residTpreciseabs2)
+
+myDataAll$PreciseBiaslmFlag1 <- as.factor(myDataAll$PreciseBiaslmFlag1)
+myDataAll$PreciseBiaslmFlag2 <- as.factor(myDataAll$PreciseBiaslmFlag2)
+```
+
+**Add Temporal Memory filter column**
+```{r}
+TempMemppBad <- c(5, 6, 11, 13, 30, 36, 38, 53, 54, 64)
+
+myDataAll <- myDataAll %>%
+  mutate(
+    TempMemfilter = if_else(sub %in% TempMemppBad, 0, 1)
+  )
+
+myDataAll_memfiltered <- myDataAll[myDataAll$TempMemfilter != 0,]
+length(unique(myDataAll_memfiltered$sub))
+```
+
+
+##Relationship of between-trial pattern correlation and temporal memory accuracy
+Correlation for precise bias
+```{r}
+BiasBeta <- c()
+BiasSE <- c()
+BiasF <- c()
+Biasp <- c()
+
+triallagBeta <- c()
+triallagSE <- c()
+triallagF <- c()
+triallagp <- c()
+
+BiasLagInterBeta <- c()
+BiasLagInterSE <- c()
+BiasLagInterF <- c()
+BiasLagInterp <- c()
+
+masklist <- c()
+
+maskli <- c("FS_FPl", "harvardoxford_Hippocampus_bin60_2mm")
+
+for (ThisMask in maskli){
+  masklist <- append(masklist, ThisMask)
+  # ThisMask <- "FS_FPl"
+  myData_subset= myDataAll_memfiltered[myDataAll_memfiltered$mask==ThisMask & myDataAll_memfiltered$PerciseBiasFlag1 %in% c("MemFail", "MemSuccess") & myDataAll_memfiltered$triallag %in% c(-4, -3, -2, -1, 1, 2, 3, 4),] 
+  mod <- lmer(corr_z~PerciseBiasFlag1*triallag + valmn1 + aromn1 + ActionGoal +EmoChange+ ActionChange+ order + ImgSemantic + (valmn1 + ActionGoal|sub), control = lmerControl(optimizer = "bobyqa"), data=myData_subset, REML =FALSE)
+  summod <- summary(mod)
+  betanow <- summod[["coefficients"]][2,1]
+  aovmod <-anova(mod)
+  pnow <- round(aovmod$`Pr(>F)`[1], 3)
+  
+BiasBeta <- append(BiasBeta, summod[["coefficients"]][2,1])
+BiasSE <- c(BiasSE, summod[["coefficients"]][2,2])
+BiasF <- c(BiasF, aovmod$`F value`[1])
+Biasp <- c(Biasp, aovmod$`Pr(>F)`[1])
+
+triallagBeta <- append(triallagBeta, summod[["coefficients"]][3,1])
+triallagSE <- c(triallagSE, summod[["coefficients"]][3,2])
+triallagF <- c(triallagF, aovmod$`F value`[2])
+triallagp <- c(triallagp, aovmod$`Pr(>F)`[2])
+
+BiasLagInterBeta <- c(BiasLagInterBeta, summod[["coefficients"]][16,1])
+BiasLagInterSE <- c(BiasLagInterSE, summod[["coefficients"]][16,2] )
+BiasLagInterF <- c(BiasLagInterF, aovmod$`F value`[10])
+BiasLagInterp <- c(BiasLagInterp, aovmod$`Pr(>F)`[10])
+  
+  if (pnow > 0.001){
+  text_label <- paste0("p = ", pnow)
+  }
+  else{
+    text_label <- "p < 0.001"
+  }
+if (ThisMask == "harvardoxford_Hippocampus_bin60_2mm"){
+  colorvalue = c("#8FBFD8", "#077EAD")
+}
+else if (ThisMask == "FS_FPl"){
+  colorvalue = c("#B89BB2", "#AD4993")
+}
+else{colorvalue = c("#BEBEBE", "#424242")}
+  
+  ylabel=sprintf("%s Pattern Correlation (z)", transform_string(ThisMask))
+  fnamepdf=sprintf("/Users/jingyiwang/Dropbox/LEAP_Neuro_Lab/researchProjects/jingyi_documents/emotion_motor_grant/Manuscripts/MemoryMS/Figures/RawPlots/%s_lagMem_corr_Memfilter.pdf", ThisMask)
+  fnamepng=sprintf("/Users/jingyiwang/Dropbox/LEAP_Neuro_Lab/researchProjects/jingyi_documents/emotion_motor_grant/Manuscripts/MemoryMS/Figures/RawPlots/%s_lagMem_corr_Memfilter.png", ThisMask)
+  library(dplyr)
+myData_subset_grouped <- myData_subset %>% group_by(sub, triallag, PerciseBiasFlag1)%>%dplyr::summarize(corr_z=mean(corr_z, na.rm=TRUE))
+detach("package:dplyr", force=TRUE)
+myData_subset_grouped_sum <- summarySEwithin(myData_subset_grouped, measurevar="corr_z", idvar=c("sub"),withinvars=c("PerciseBiasFlag1", "triallag"), na.rm=TRUE, conf.interval=.95)
+library(dplyr)
+ymax <- max(myData_subset_grouped_sum$corr_z) + max(myData_subset_grouped_sum$se)
+  #plot lines and save
+# Line plot with multiple groups
+ggplot(data=myData_subset_grouped_sum, aes(x=triallag, y=corr_z, group=PerciseBiasFlag1)) +
+  geom_errorbar(aes(ymin=corr_z-se, ymax=corr_z+se), width=.2) +
+  geom_line(aes(color=PerciseBiasFlag1), size=0.6)+
+  # geom_line(size=1.5)+
+  geom_point(aes(color=PerciseBiasFlag1), size=0.6)+
+# labs(title=ThisMask)+
+  ylab(ylabel)+
+  xlab("LAG")+
+  theme(legend.position = "right")+
+  annotate(
+      "text", x = Inf, y = ymax+0.005, label = text_label, 
+      hjust = 1, vjust = 1, size = 3, color = "black") +
+  scale_color_manual(values=colorvalue, name = "Temporal Memory",labels = c("Low", "High"))+
+theme_classic(base_size = 20) +
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  # theme(legend.position="none")+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank())
+ ggsave(fnamepdf,height=4, width=8, dpi=300)
+  ggsave(fnamepng,height=4, width=8, dpi=300)
+}
+
+sumdflag <- data.frame(masklist, BiasBeta, BiasSE, BiasF, Biasp, triallagBeta, triallagSE, triallagF, triallagp, BiasLagInterBeta, BiasLagInterSE, BiasLagInterF, BiasLagInterp)
+sumdflag$Biasp <- round(sumdflag$Biasp, 3)
+```
+##FPl
+```{r}
+ThisMask <- "FS_FPl"
+  myData_subset= myDataAll_memfiltered[myDataAll_memfiltered$mask==ThisMask & myDataAll_memfiltered$PerciseBiasFlag1 %in% c("MemFail", "MemSuccess") & myDataAll_memfiltered$triallag %in% c(-4, -3, -2, -1, 1, 2, 3, 4),] 
+  mod <- lmer(corr_z~PerciseBiasFlag1*triallag + valmn1 + aromn1 + ActionGoal +EmoChange+ ActionChange+ order + ImgSemantic + (valmn1 + ActionGoal|sub), control = lmerControl(optimizer = "bobyqa"), data=myData_subset, REML =FALSE)
+  summod <- summary(mod)
+  summod
+  betanow <- summod[["coefficients"]][2,1]
+  aovmod <-anova(mod)
+  pnow <- round(aovmod$`Pr(>F)`[1], 3)
+```
+
+```{r}
+ThisMask <- "FS_FPl"
+  myData_subset= myDataAll_memfiltered[myDataAll_memfiltered$mask==ThisMask & myDataAll_memfiltered$PerciseBiasFlag1 %in% c("MemFail", "MemSuccess") & myDataAll_memfiltered$triallag %in% c(-4, -3, -2, -1, 1, 2, 3, 4),] 
+  mod <- lmer(corr_z~PerciseBiasFlag1*triallag + valmn1 + aromn1 + ActionGoal +EmoChange+ ActionChange+ order + ImgSemantic + ReconMem1 + (valmn1 + ActionGoal|sub), control = lmerControl(optimizer = "bobyqa"), data=myData_subset, REML =FALSE)
+  summod <- summary(mod)
+  summod
+  betanow <- summod[["coefficients"]][2,1]
+  aovmod <-anova(mod)
+  pnow <- round(aovmod$`Pr(>F)`[1], 3)
+```
+
+##HPC
+```{r}
+ThisMask <- "harvardoxford_Hippocampus_bin60_2mm"
+  myData_subset= myDataAll_memfiltered[myDataAll_memfiltered$mask==ThisMask & myDataAll_memfiltered$PerciseBiasFlag1 %in% c("MemFail", "MemSuccess") & myDataAll_memfiltered$triallag %in% c(-4, -3, -2, -1, 1, 2, 3, 4),] 
+  mod <- lmer(corr_z~PerciseBiasFlag1*triallag + valmn1 + aromn1 + ActionGoal +EmoChange+ ActionChange+ order + ImgSemantic + (valmn1 + ActionGoal|sub), control = lmerControl(optimizer = "bobyqa"), data=myData_subset, REML =FALSE)
+  summod <- summary(mod)
+  summod
+  betanow <- summod[["coefficients"]][2,1]
+  aovmod <-anova(mod)
+  pnow <- round(aovmod$`Pr(>F)`[1], 3)
+```
+
+```{r}
+ThisMask <- "harvardoxford_Hippocampus_bin60_2mm"
+  myData_subset= myDataAll_memfiltered[myDataAll_memfiltered$mask==ThisMask & myDataAll_memfiltered$PerciseBiasFlag1 %in% c("MemFail", "MemSuccess") & myDataAll_memfiltered$triallag %in% c(-4, -3, -2, -1, 1, 2, 3, 4),] 
+  mod <- lmer(corr_z~PerciseBiasFlag1*triallag + valmn1 + aromn1 + ActionGoal +EmoChange+ ActionChange+ order + ImgSemantic + ReconMem1 + (valmn1 + ActionGoal|sub), control = lmerControl(optimizer = "bobyqa"), data=myData_subset, REML =FALSE)
+  summod <- summary(mod)
+  summod
+  betanow <- summod[["coefficients"]][2,1]
+  aovmod <-anova(mod)
+  pnow <- round(aovmod$`Pr(>F)`[1], 3)
+```
+
+##Relationship between between-trial pattern correlation and amygdala activation
+For loop for different brain areas and lags
+```{r}
+maskli <- c("FS_FPl", "harvardoxford_Hippocampus_bin60_2mm")
+
+uniAMYBeta <- c()
+uniAMY_p <- c()
+
+valmnBeta <- c()
+valmn_p <- c()
+
+aromnBeta <- c()
+aromn_p <- c()
+
+Maskli <- c()
+Lag <- c()
+for (tmpMask in maskli){
+  for (tmptriallag in c(1, -1)){
+    #tmptriallag <- 1
+    #tmpMask <- "FPl"
+    tmpdf <- myDataAll[myDataAll$mask==tmpMask & myDataAll$triallag==tmptriallag,]
+    
+    tmpmod <- lmer(corr_z~uni_whiten_AMY + valmn1 + aromn1 +ActionGoal+EmoChange+ActionChange+ImgSemantic+(valmn1+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summod <- summary(tmpmod)
+    aovmod <- anova(tmpmod)
+    
+    uniAMYBeta <- append(uniAMYBeta, round(summod[["coefficients"]][2, 1], 3))
+    uniAMY_p <- append(uniAMY_p, round(aovmod$`Pr(>F)`[1], 3))
+    
+    valmnBeta <- append(valmnBeta, round(summod[["coefficients"]][3, 1], 3))
+    valmn_p <- append(valmn_p, round(aovmod$`Pr(>F)`[2], 3))
+    
+    aromnBeta <- append(aromnBeta, round(summod[["coefficients"]][4, 1], 3))
+    aromn_p <- append(aromn_p, round(aovmod$`Pr(>F)`[3], 3))
+    
+    Maskli <- append(Maskli, tmpMask)
+    Lag <- append(Lag, tmptriallag)
+
+    fnamepdf<-sprintf("/Users/jingyiwang/Dropbox/LEAP_Neuro_Lab/researchProjects/jingyi_documents/emotion_motor_grant/Manuscripts/MemoryMS/Figures/RawPlots/AmyUniwhitten_PS_lag%s_%s_memfilter.pdf", tmptriallag, tmpMask)
+fnamepng<-sprintf("/Users/jingyiwang/Dropbox/LEAP_Neuro_Lab/researchProjects/jingyi_documents/emotion_motor_grant/Manuscripts/MemoryMS/Figures/RawPlots/AmyUniwhitten_PS_lag%s_%s_memfilter.png", tmptriallag, tmpMask)
+# "#2859BB"
+# '#1627BB'
+
+xlabel<-"Amygdala Activation"
+ylabel<-sprintf("%s Pattern Correlation (z)", transform_string(tmpMask))
+plotTitle <- ""
+
+if (tmpMask=="FS_FPl"){
+  #regressline <- "#9CD2A1" #for MDRS
+  regressline <- "#B64097"
+  
+  
+}
+else if (tmpMask=="Amy_50_bin"){
+  regressline <- "#EAA48F"
+}
+else{
+  regressline <- "#95BBD8"
+}
+
+# myGroupCorrelation_group(tmpdf, "uni_AMY","corr_z", xlabel, ylabel,"#2859BB", '#1627BB', plotTitle, fnamepdf, fnamepng)
+myGroupCorrelation_group_sub(tmpdf, "uni_whiten_AMY", "corr_z~uni_whiten_AMY + valmn1 + aromn1 +ActionGoal+EmoChange+ActionChange+ImgSemantic+(valmn1+ActionGoal|sub)", "corr_z~uni_whiten_AMY + valmn1 + aromn1 +ActionGoal+EmoChange+ActionChange+ImgSemantic+(valmn1+ActionGoal|sub)", "uni_whiten_AMY", "corr_z", xlabel, ylabel, highcolor, regressline, plotTitle, fnamepdf, fnamepng, 1)
+  }
+}
+sumuniAMYPSWhitten_memfilter <- data.frame(Maskli, Lag, uniAMYBeta, uniAMY_p, valmnBeta, valmn_p, aromnBeta, aromn_p)
+```
+
+###FPl
+```{r}
+tmptriallag <- 1
+tmpMask <- "FS_FPl"
+    tmpdf <- myDataAll[myDataAll$mask==tmpMask & myDataAll$triallag==tmptriallag,]
+    
+    tmpmod <- lmer(corr_z~uni_whiten_AMY + valmn1 + aromn1 +ActionGoal+EmoChange+ActionChange+ImgSemantic+(valmn1+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summod <- summary(tmpmod)
+    summod
+    aovmod <- anova(tmpmod)
+    aovmod
+```
+
+```{r}
+tmptriallag <- 1
+tmpMask <- "FS_FPl"
+    tmpdf <- myDataAll[myDataAll$mask==tmpMask & myDataAll$triallag==tmptriallag,]
+    
+    tmpmod <- lmer(corr_z~uni_whiten_AMY + valmn1 + aromn1 +ActionGoal+EmoChange+ActionChange+ImgSemantic+ReconMem1+(valmn1+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summod <- summary(tmpmod)
+    summod
+    aovmod <- anova(tmpmod)
+    aovmod
+```
+###HPC
+```{r}
+tmptriallag <- 1
+tmpMask <- "harvardoxford_Hippocampus_bin60_2mm"
+    tmpdf <- myDataAll[myDataAll$mask==tmpMask & myDataAll$triallag==tmptriallag,]
+    
+    tmpmod <- lmer(corr_z~uni_whiten_AMY + valmn1 + aromn1 +ActionGoal+EmoChange+ActionChange+ImgSemantic+(valmn1+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summod <- summary(tmpmod)
+    summod
+    aovmod <- anova(tmpmod)
+    aovmod
+```
+```{r}
+tmptriallag <- 1
+tmpMask <- "harvardoxford_Hippocampus_bin60_2mm"
+    tmpdf <- myDataAll[myDataAll$mask==tmpMask & myDataAll$triallag==tmptriallag,]
+    
+    tmpmod <- lmer(corr_z~uni_whiten_AMY + valmn1 + aromn1 +ActionGoal+EmoChange+ActionChange+ImgSemantic+ReconMem1+(valmn1+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summod <- summary(tmpmod)
+    summod
+    aovmod <- anova(tmpmod)
+    aovmod
+```
+
+
+
+
+
+
+
+

@@ -1,0 +1,455 @@
+---
+title: "AAfMRI_CoarseMem"
+author: "Jingyi"
+date: "Aug/1/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls(all=TRUE)) 
+library(afex)
+library(emmeans)
+library(knitr)
+library(tidyverse)
+library(compute.es)
+library(car)
+library(ggplot2)
+library(multcomp)
+library(pastecs)
+library(WRS2)
+library(Hmisc)
+library(tidyverse)
+library(SuppDists)
+library(ggpubr)
+library(readxl)
+library(ez)
+library(nlme)
+library(dplyr)
+library(pacman)
+p_load(reshape2, viridis, hrbrthemes,MASS,gridExtra)
+knitr::opts_chunk$set(echo = TRUE)
+`select` <- dplyr::select
+`recode` <- dplyr::recode
+options(contrasts=c("contr.sum","contr.poly"))
+```
+Get data
+```{r}
+# Set working directory to source file location
+setwd("YOURRESULTSDIR")
+# Load the data
+CoarseMemData <- read_csv("CoarseMem_sorted.csv")
+
+```
+```{r}
+myScatterPlotSFN <- function (data, fname, xvar, yvar, xlabel,ylabel, color, plotTitle, pvalue, rvalue) {
+  if(NROW(data)>3){
+     if (pvalue > 0.001 & pvalue <= 0.005){
+      annotationNow <- paste0("r = ", round(rvalue, digits=2)," ", "**")
+    }
+    else if (pvalue <= 0.001){
+      annotationNow <- paste0("r = ", round(rvalue, digits=2)," ", "***")
+    }
+    else if (pvalue > 0.005 & pvalue <= 0.05){
+      annotationNow <- paste0("r = ", round(rvalue, digits=2), " ","*")
+    }
+    else if (pvalue > 0.05){
+      annotationNow <- paste0("r = ", round(rvalue, digits=2))
+    }
+    # rhovalue=with(data, cor.test(get(xvar),get(yvar), use = "complete.obs", method="spearman",exact=FALSE ))
+    ggplot(data, aes_string(x=xvar, y=yvar)) +
+      geom_point(shape = 21, colour = "black", fill = color, size = 1, stroke = 0.5, alpha=1/10)+
+      # geom_point(shape=19,  size = 3, colour=color, alpha = 1/10) + 
+      geom_smooth(method=lm, colour=color, size = 1.25, fill = color, se=TRUE ) + # Add linear regression lines #999999
+      theme_classic(base_size=20)+ #gray or bw # original 15
+      # scale_y_continuous(expand = c(0,0),limits = c(0,ymax))+ #Set the y-axis limits
+      # ylim = ymax +
+      xlab(xlabel) + 
+      ylab(ylabel) +  
+      ggtitle(plotTitle)+
+      annotate("text", size= 2, x=Inf, y = Inf, label = annotationNow,colour = "black",vjust=1.1, hjust=1)   +
+     # annotate("text", size= 2, x=Inf, y = Inf, label = annotationNow,colour = "black",vjust=20, hjust=1)   + #20
+      theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.25))+
+      theme(plot.title = element_text(hjust = 0.5), panel.grid.major=element_blank(),panel.grid.minor=element_blank(),panel.background=element_blank())+
+      scale_y_continuous(limits = c(0,100))
+    ggsave(fname,height=4, width=4.5, dpi=300)
+  }}
+```
+set group regression plot
+```{r}
+myGroupCorrelation_group_sub <- function(datainit, completevar, Formula,  xvar, yvar, xlabel, ylabel, highcolor, modlinecolor, plottitle, fnamepdf, fnamepng, hjust){
+  #Make sure all the rows contain values
+  data <- datainit[complete.cases(datainit[[completevar]]), ]
+  data$sub <- data$participant
+  # Create predicted values based on the model
+  tmp_ml <- lmer(Formula, data = data, REML =FALSE)
+tmp_summary <- summary(tmp_ml)
+tmp_anova <- anova(tmp_ml)
+p_value <- tmp_anova$`Pr(>F)`[1]
+
+  if (round(as.numeric(p_value),3) >= 0.001){
+    labelnow <- paste( " p = ", round(as.numeric(p_value), digits=3))
+    
+  }
+else if (round(as.numeric(p_value), 3) < 0.001){
+  labelnow <- "p < 0.001"
+}
+
+#just to trick the plot. But need to find a better solution
+tmp_ml <- lmer(Formula, data = data, REML = FALSE)
+data$predictnum <- predict(tmp_ml,variances=list(fixef=TRUE,ranef=FALSE))
+
+# Calculate the range for x and y
+x_range <- range(data[[xvar]], na.rm = TRUE)
+y_range <- range(data$predictnum, na.rm = TRUE)
+
+# Calculate the y-values at the x limits of your data
+intercept <- tmp_summary[["coefficients"]][1]
+slope <- tmp_summary[["coefficients"]][2]
+
+# Endpoints of the line
+y_start <- slope * x_range[1] + intercept
+y_end <- slope * x_range[2] + intercept
+
+## Create a list of colors
+# Extract participant list
+pplst <- unique(data$sub)
+nsub <- length(pplst)
+# Define a list of colors from Blues (one per subject)
+colour_lst2  <- scales::seq_gradient_pal(low = "#FCF5F2", high = highcolor, space = "Lab")(1:nsub/nsub)
+
+# create values for scale colour manual (assign each color to a participant)
+values_lst2 <- setNames(colour_lst2, pplst)
+
+# create plot
+pltnow <- ggplot(data,
+                           aes(x = get(xvar),
+                               y = predictnum,
+                               color = factor(sub), group = factor(sub)))+
+  geom_smooth(method = lm, se=F, size=0.3, alpha=0.5)+
+  scale_color_manual(values = values_lst2)+
+  # geom_abline(aes(intercept=`(Intercept)`, slope=get(xvar)), as.data.frame(t(fixef(tmp_ml))), lwd= 1,col = modlinecolor, size = 3) +
+  geom_segment(aes(x = x_range[1], y = y_start, xend = x_range[2], yend = y_end), 
+               lwd = 1, col = modlinecolor, size = 3) +
+  # coord_cartesian(xlim = c(-2, 1)) +
+  annotate("text", size= 4, x=Inf, y = Inf, label = labelnow,colour = "black",vjust=1.15, hjust=hjust)+
+  ylab(ylabel)+
+  xlab(xlabel)+
+  theme_classic(base_size = 20) +
+  
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(legend.position="none")+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1,))+
+  labs(title = plottitle)
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank())
+
+pltnow
+
+ggsave(fnamepdf, width = 4.5, height = 4,dpi=300)
+ggsave(fnamepng, width = 4.5, height = 4, dpi = 600)
+}
+```
+
+Set color
+```{r}
+library("colorspace")
+# hcl_palettes(plot = TRUE)
+BR<-diverging_hcl(5, palette = "Blue-Red 2")
+allcolor<-c(BR[1], BR[5], BR[2], BR[4])
+
+colorList1 <- c(sequential_hcl(7, palette = "Mint"))
+colorList2 <- c(sequential_hcl(7, palette = "Peach"))
+
+colorList3 <- c(sequential_hcl(5, palette = "Reds"))
+colorList4 <- c(sequential_hcl(5, palette = "Blues"))
+
+list_2color <- c(colorList2[3], colorList1[3])
+list_2color_1 <- c(colorList2[2], colorList1[2])
+
+list_2color_2 <- c(colorList3[3], colorList4[2])
+ 
+# Failcolor <- allcolor[5]
+# Succcolor <- allcolor[1]
+
+negcolor <- list_2color[1]
+poscolor <- list_2color[2]
+
+Failcolor <- list_2color_2[1]
+Succcolor <- list_2color_2[2]
+
+regressline <- "#424242" #another option: "#7F7EBC"; "#86BFDE"
+ribbonline <- "#BEBEBE"
+"#7F7EBC"
+"#86BFDE"
+"#E1E1E1"
+"#BEBEBE"
+highcolor <- sequential_hcl(5, palette = "Grays")[3]
+```
+
+
+**calculate the precise bias and coarse bias**
+The precise bias absolute = |precise time points - estimated time point|
+The precise bias = precise time points - estimated time point
+The coarse bias absolute = |run - estimated run|
+The coarse bias  = run - estimated run #positive estimated the onset earlier than real onset, negative estimated the onset later than real onset.
+##Get variables ready
+scale real time to slider metrics
+```{r}
+CoarseMemData$Treal_precise=(8/CoarseMemData$TotalTime)*(CoarseMemData$image.started-CoarseMemData$Start)
+CoarseMemData$Testimate_precise=CoarseMemData$CoarseTemp_slider.response
+CoarseMemData$Tprecise_biasabs=abs(CoarseMemData$Treal_precise-CoarseMemData$Testimate_precise)
+CoarseMemData$Tprecise_bias=CoarseMemData$Treal_precise-CoarseMemData$Testimate_precise
+CoarseMemData$Testimate_run=ceiling(CoarseMemData$CoarseTemp_slider.response)
+CoarseMemData$Trun_biasabs=abs(CoarseMemData$run-CoarseMemData$Testimate_run)
+CoarseMemData$Trun_bias=CoarseMemData$run-CoarseMemData$Testimate_run
+```
+
+Change type of the variables.
+```{r}
+CoarseMemData$Congruency<-as.factor(CoarseMemData$Congruency)
+levels(CoarseMemData$Congruency)<-c("Con","Incon")
+CoarseMemData$StimVal<-as.factor(CoarseMemData$StimVal)
+CoarseMemData$Action<-as.factor(CoarseMemData$Action)
+CoarseMemData$Tprecise_bias<-as.numeric(as.character(CoarseMemData$Tprecise_bias))
+CoarseMemData$Trun_bias<-as.numeric(as.character(CoarseMemData$Trun_bias))
+CoarseMemData$Tprecise_biasabs<-as.numeric(as.character(CoarseMemData$Tprecise_biasabs))
+CoarseMemData$Trun_biasabs<-as.numeric(as.character(CoarseMemData$Trun_biasabs))
+```
+Check number of participants
+```{r}
+length(unique(CoarseMemData$participant))
+```
+
+
+**Calculate individual chance level using permutation methods (DuBrow 2024)**
+cleaned
+```{r}
+CoarseMemData_cor_clean <- CoarseMemData_clean %>%
+  group_by(participant) %>%
+  dplyr::summarize(
+    pearson_r = cor(Treal_precise, Testimate_precise, method = "pearson", use = "complete.obs"),
+    pearson_p = suppressWarnings(cor.test(Treal_precise, Testimate_precise, method = "pearson")$p.value),
+    spearman_r = cor(Treal_precise, Testimate_precise, method = "spearman", use = "complete.obs"),
+    spearman_p = suppressWarnings(cor.test(Treal_precise, Testimate_precise, method = "spearman")$p.value),
+    .groups = "drop"
+  )
+mean(CoarseMemData_cor_clean$pearson_r)
+ sd(CoarseMemData_cor_clean$pearson_r)
+```
+Plot the box-plot
+```{r}
+ggplot(CoarseMemData_cor_clean, aes(x = "", y = pearson_r)) +
+  geom_boxplot(outlier.shape = NA, fill = "lightgray") +
+  geom_jitter(width = 0.3, alpha = 0.6, color = "darkgray", size = 0.8) +
+  labs(x = "",
+       y = "Correlation (r)") +
+  theme_classic(base_size=10.5)+
+  theme(plot.title = element_blank())+
+  labs(title="")+
+  # theme(axis.text.y = element_text(size=rel(1)))+ 
+    theme(axis.line = element_line(colour = 'black', size = 0.3))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.3))+
+  theme(axis.text.x = element_blank(),       # ⬅️ remove x-axis labels
+    axis.ticks.x = element_blank())+       # ⬅️ remove x-axis tick marks
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(limits = c(0, 0.7),
+                     expand = c(0, 0),
+                     position = "left")
+  # +coord_flip()
+
+ggsave("YOURRESULTSDIR/Manuscripts/MemoryMS/Figures/RawPlots/ActCorrelationDistribution.pdf",height=2, width=1.2, dpi=300, device=cairo_pdf)
+```
+
+##plot histogram for actual and estimates time correlation 
+```{r}
+# Plot the histogram using ggplot2
+ggplot(CoarseMemData_cor_clean, aes(y = ..density..,x = pearson_r)) +
+  geom_histogram(binwidth = 0.03, fill = "#b3b3b3", color = "black", size = 0.1) +
+  geom_vline(xintercept = mean(CoarseMemData_cor_clean$pearson_r), linetype = "solid", color = "#377EB8", size = 0.7) +  # # Add vertical line for mean correlation
+  labs(x = "Correlation (r)\n Actual vs. Estimated Time", y = "Frequency") +
+  theme_classic(base_size=11)+
+  theme(plot.title = element_blank())+
+  theme(axis.text.y = element_text(size=rel(1)))+ 
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(expand = c(0,0), labels = scales::number_format(accuracy = 0.1))
+  # scale_x_continuous(expand = c(0,0), limits = c(-0.25,0.25), labels = scales::number_format(accuracy = 0.1))
+
+ggsave("YOURRESULTSDIR/Manuscripts/MemoryMS/Figures/RawPlots/DistributionActvsEstTime.pdf",height=4, width=3.5, dpi=300, device=cairo_pdf)
+```
+Permutation plot
+##Plot a sample sub permutation
+```{r}
+sub=12
+CoarseMemData_Per <- CoarseMemData[CoarseMemData$participant==sub,]
+Per_r_Spearman <-c()
+Per_p_Spearman <- c()
+Per_r_Pearson <-c()
+Per_p_Pearson <- c()
+PerNum <- c()
+
+for (i in 1:500){
+  CoarseMemData_Per$Testimate_precise_per<-runif(nrow(CoarseMemData_Per), 0,8)
+  Pearson_mod <- cor.test(CoarseMemData_Per$Treal_precise, CoarseMemData_Per$Testimate_precise_per,method = "pearson", use = "complete.obs")
+  Per_r_Pearson <- append(Per_r_Pearson, Pearson_mod[["estimate"]][["cor"]])
+  Per_p_Pearson <- append(Per_p_Pearson, Pearson_mod[["p.value"]])
+  
+  Spearman_mod <- cor.test(CoarseMemData_Per$Treal_precise, CoarseMemData_Per$Testimate_precise_per,method = "spearman", use = "complete.obs")
+  Per_r_Spearman <- append(Per_r_Spearman, Spearman_mod[["estimate"]][["rho"]])
+  Per_p_Spearman <- append(Per_p_Spearman, Spearman_mod[["p.value"]])
+  
+  PerNum <- append(PerNum, i)
+}
+Permdf <- data.frame(Per_r_Pearson, Per_p_Pearson, Per_r_Spearman, Per_p_Spearman, PerNum)
+
+# Plot the histogram using ggplot2
+ggplot(Permdf, aes(y = ..density..,x = Per_r_Pearson)) +
+  geom_histogram(binwidth = 0.01, fill = "#b3b3b3", color = "black", size = 0.1) +
+  geom_vline(xintercept = mean(CoarseMemData_cor_clean$pearson_r), linetype = "solid", color = "#377EB8", size = 0.7) +  # Add vertical line at -0.16
+  geom_vline(xintercept = quantile(Permdf$Per_r_Pearson, 0.95), linetype = "dotted", color = "#377EB8", size = 0.7) + #chance level
+  labs(x = "Correlation (r)", y = "Frequency") +
+  theme_classic(base_size=18)+
+  # theme(plot.title = element_blank())+
+  labs(title = "")+
+  theme(axis.text.y = element_text(size=rel(1)))+ 
+    theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(expand = c(0,0))
+  # scale_x_continuous(expand = c(0,0), limits = c(-0.25,0.25), labels = scales::number_format(accuracy = 0.1))
+
+ggsave("YOURRESULTSDIR/Manuscripts/MemoryMS/Figures/RawPlots/PermutationPlot_meanCorr.pdf",height=4, width=3, dpi=300, device=cairo_pdf)
+```
+
+Get the group permutation r
+```{r}
+set.seed(123)
+
+subs <- unique(CoarseMemData_clean$participant)
+
+all_perm <- do.call(rbind, lapply(subs, function(sub){
+
+  dat <- CoarseMemData_clean[CoarseMemData_clean$participant == sub, ]
+
+  out <- data.frame(
+    participant = sub,
+    PerNum = 1:500,
+    Per_r_Pearson  = NA_real_,
+    Per_p_Pearson  = NA_real_,
+    Per_r_Spearman = NA_real_,
+    Per_p_Spearman = NA_real_
+  )
+
+  for (i in 1:500){
+    dat$Testimate_precise_per <- runif(nrow(dat), 0, 8)
+
+    pear <- cor.test(dat$Treal_precise, dat$Testimate_precise_per,
+                     method="pearson", use="complete.obs")
+    spear <- cor.test(dat$Treal_precise, dat$Testimate_precise_per,
+                      method="spearman", use="complete.obs")
+
+    out$Per_r_Pearson[i]  <- unname(pear$estimate)
+    out$Per_p_Pearson[i]  <- pear$p.value
+    out$Per_r_Spearman[i] <- unname(spear$estimate)
+    out$Per_p_Spearman[i] <- spear$p.value
+  }
+
+  out
+}))
+
+# Group “chance level” by permutation number (mean across subjects at each PerNum)
+group_chance <- aggregate(
+  cbind(Per_r_Pearson, Per_r_Spearman) ~ PerNum,
+  data = all_perm,
+  FUN = mean,
+  na.rm = TRUE
+)
+
+```
+```{r}
+# Plot the histogram using ggplot2
+ggplot(group_chance, aes(y = ..density..,x = Per_r_Pearson)) +
+  geom_histogram(binwidth = 0.001, fill = "#b3b3b3", color = "black", size = 0.01) +
+  geom_vline(xintercept = mean(CoarseMemData_cor_clean$pearson_r), linetype = "solid", color = "#377EB8", size = 0.7) +  # Add vertical line at -0.16
+  geom_vline(xintercept = quantile(group_chance$Per_r_Pearson, 0.95), linetype = "dotted", color = "#377EB8", size = 0.7) + #chance level
+  labs(x = "Correlation (r)", y = "Frequency") +
+  theme_classic(base_size=10.5)+
+  theme(plot.title = element_blank())+
+  theme(axis.text.y = element_text(size=rel(1)))+ 
+    theme(axis.line = element_line(colour = 'black', size = 0.3))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.3))
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(expand = c(0,0))
+  # scale_x_continuous(expand = c(0,0), limits = c(-0.25,0.25), labels = scales::number_format(accuracy = 0.1))
+
+ggsave("YOURRESULTSDIR/Manuscripts/MemoryMS/Figures/RawPlots/PermutationPlot_meanCorr_2.pdf",height=2.3, width=2.3, dpi=300, device=cairo_pdf)
+```
+
+
+
+
+##Plot histograms of confidence rating
+```{r}
+CoarseMemData_clean <- CoarseMemData_clean %>%
+  mutate(ConfReconMem_num = case_when(
+    ConfReconMem == "SConf_1" ~ 2,
+    ConfReconMem == "ModConf_1" ~ 3,
+    ConfReconMem == "VeryConf_1" ~ 4,
+    ConfReconMem == "NotConfAtALL_1" ~ 1,
+    TRUE ~ NA_real_
+  ))
+```
+```{r}
+CoarseMemData_clean <- CoarseMemData_clean %>%
+  mutate(ConfCoarseMem_num = case_when(
+    ConfCoarseMem == "SConf_2" ~ 2,
+    ConfCoarseMem == "ModConf_2" ~ 3,
+    ConfCoarseMem == "VeryConf_2" ~ 4,
+    ConfCoarseMem == "NotConfAtALL_2" ~ 1,
+    TRUE ~ NA_real_
+  ))
+```
+
+```{r}
+# Plot the histogram using ggplot2
+ggplot(CoarseMemData_clean, aes(y = ..density..,x = ConfReconMem_num)) +
+  geom_histogram(binwidth = 1, fill = "#b3b3b3", color = "black", size = 0.1) +
+  # geom_vline(xintercept = mean(CoarseMemData_cor_clean$pearson_r), linetype = "solid", color = "#377EB8", size = 0.7) +  # # Add vertical line for mean correlation
+  labs(x = "Confidence Rating", y = "Frequency") +
+  theme_classic(base_size=11)+
+  theme(plot.title = element_blank())+
+  theme(axis.text.y = element_text(size=rel(1)))+ 
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(expand = c(0,0), labels = scales::number_format(accuracy = 0.1))
+  # scale_x_continuous(expand = c(0,0), limits = c(-0.25,0.25), labels = scales::number_format(accuracy = 0.1))
+
+ggsave("YOURRESULTSDIR/Manuscripts/MemoryMS/Figures/RawPlots/ConfidenceInterval.pdf",height=2.3, width=2.3, dpi=300, device=cairo_pdf)
+```
+```{r}
+# Plot the histogram using ggplot2
+ggplot(CoarseMemData_clean, aes(y = ..density..,x = ConfCoarseMem_num)) +
+  geom_histogram(binwidth = 1, fill = "#b3b3b3", color = "black", size = 0.1) +
+  # geom_vline(xintercept = mean(CoarseMemData_cor_clean$pearson_r), linetype = "solid", color = "#377EB8", size = 0.7) +  # # Add vertical line for mean correlation
+  labs(x = "Confidence Rating", y = "Frequency") +
+  theme_classic(base_size=11)+
+  theme(plot.title = element_blank())+
+  theme(axis.text.y = element_text(size=rel(1)))+ 
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(expand = c(0,0), labels = scales::number_format(accuracy = 0.1))
+  # scale_x_continuous(expand = c(0,0), limits = c(-0.25,0.25), labels = scales::number_format(accuracy = 0.1))
+
+ggsave("YOURRESULTSDIR/Manuscripts/MemoryMS/Figures/RawPlots/ConfidenceIntervalTimeLine.pdf",height=2.3, width=2.3, dpi=300, device=cairo_pdf)
+```
+
+
+
+

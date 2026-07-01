@@ -1,0 +1,1363 @@
+---
+title: "AAfMRI_TRbyTR"
+author: "Jingyi"
+date: "Jan/21/2024"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls(all=TRUE)) 
+library(afex)
+library(emmeans)
+library(knitr)
+library(tidyverse)
+library(compute.es)
+library(car)
+library(ggplot2)
+library(multcomp)
+library(pastecs)
+library(WRS2)
+library(Hmisc)
+library(tidyverse)
+library(SuppDists)
+library(ggpubr)
+library(readxl)
+library(ez)
+library(nlme)
+library(dplyr)
+library(pacman)
+p_load(reshape2, viridis, hrbrthemes,MASS,gridExtra)
+p_load(interactions)
+p_load(plyr)
+knitr::opts_chunk$set(echo = TRUE)
+`select` <- dplyr::select
+`recode` <- dplyr::recode
+options(contrasts=c("contr.sum","contr.poly"))
+```
+set plot
+set group regression plot
+```{r}
+myGroupCorrelation_group_sub <- function(datainit, completevar, Formula,  xvar, yvar, xlabel, ylabel, highcolor, modlinecolor, plottitle, fnamepdf, fnamepng, hjust){
+  #Make sure all the rows contain values
+  data <- datainit[complete.cases(datainit[[completevar]]), ]
+  # Create predicted values based on the model
+  tmp_ml <- lmer(Formula, data = data, REML =FALSE)
+tmp_summary <- summary(tmp_ml)
+tmp_anova <- anova(tmp_ml)
+p_value <- tmp_anova$`Pr(>F)`[1]
+
+  if (round(as.numeric(p_value),3) >= 0.001){
+    labelnow <- paste( " p = ", round(as.numeric(p_value), digits=3))
+    
+  }
+else if (round(as.numeric(p_value), 3) < 0.001){
+  labelnow <- "p < 0.001"
+}
+
+#just to trick the plot. But need to find a better solution
+tmp_ml <- lmer(Formula, data = data, REML = FALSE)
+data$predictnum <- predict(tmp_ml,variances=list(fixef=TRUE,ranef=FALSE))
+
+# Calculate the range for x and y
+x_range <- range(data[[xvar]], na.rm = TRUE)
+y_range <- range(data$predictnum, na.rm = TRUE)
+
+# Calculate the y-values at the x limits of your data
+intercept <- tmp_summary[["coefficients"]][1]
+slope <- tmp_summary[["coefficients"]][2]
+
+# Endpoints of the line
+y_start <- slope * x_range[1] + intercept
+y_end <- slope * x_range[2] + intercept
+
+## Create a list of colors
+# Extract participant list
+pplst <- unique(data$sub)
+nsub <- length(pplst)
+# Define a list of colors from Blues (one per subject)
+colour_lst2  <- scales::seq_gradient_pal(low = "#FCF5F2", high = highcolor, space = "Lab")(1:nsub/nsub)
+
+# create values for scale colour manual (assign each color to a participant)
+values_lst2 <- setNames(colour_lst2, pplst)
+
+# create plot
+pltnow <- ggplot(data,
+                           aes(x = get(xvar),
+                               y = predictnum,
+                               color = factor(sub), group = factor(sub)))+
+  geom_smooth(method = lm, se=F, size=0.3, alpha=0.5)+
+  scale_color_manual(values = values_lst2)+
+  # geom_abline(aes(intercept=`(Intercept)`, slope=get(xvar)), as.data.frame(t(fixef(tmp_ml))), lwd= 1,col = modlinecolor, size = 3) +
+  geom_segment(aes(x = x_range[1], y = y_start, xend = x_range[2], yend = y_end), 
+               lwd = 1, col = modlinecolor, size = 3) +
+  # coord_cartesian(xlim = c(-2, 1)) +
+  annotate("text", size= 4, x=Inf, y = Inf, label = labelnow,colour = "black",vjust=1.15, hjust=hjust)+
+  ylab(ylabel)+
+  xlab(xlabel)+
+  theme_classic(base_size = 20) +
+  
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(legend.position="none")+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1,))+
+  labs(title = plottitle)
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank())
+
+pltnow
+
+ggsave(fnamepdf, width = 4, height = 4,dpi=300)
+ggsave(fnamepng, width = 4, height = 4, dpi = 600)
+}
+```
+
+
+
+```{r}
+myGroupCorrelation_group_nosub <- function(datainit, completevar, Formula,  xvar, yvar, xlabel, ylabel, highcolor, modlinecolor, plottitle, fnamepdf, fnamepng, hjust){
+  #Make sure all the rows contain values
+  data <- datainit[complete.cases(datainit[[completevar]]), ]
+  # Create predicted values based on the model
+  tmp_ml <- lmer(Formula, data = data, REML =FALSE)
+tmp_summary <- summary(tmp_ml)
+tmp_anova <- anova(tmp_ml)
+p_value <- tmp_anova$`Pr(>F)`[1]
+
+  if (round(as.numeric(p_value),3) >= 0.001){
+    labelnow <- paste( " p = ", round(as.numeric(p_value), digits=3))
+    
+  }
+else if (round(as.numeric(p_value), 3) < 0.001){
+  labelnow <- "p < 0.001"
+}
+
+#just to trick the plot. But need to find a better solution
+# fit model
+tmp_ml <- lmer(Formula, data = data, REML = FALSE)
+
+# prediction grid along xvar
+  xseq <- seq(min(data[[xvar]], na.rm = TRUE),
+              max(data[[xvar]], na.rm = TRUE), length.out = 100)
+  
+  # emmeans across xvar; this gives fixed-effects (population-level) line
+  emm <- emmeans(tmp_ml,
+                 specs = reformulate(xvar),                     # ~ xvar
+                 at    = setNames(list(xseq), xvar))
+  
+  # get CIs explicitly
+  emm_df <- as.data.frame(confint(emm, level = 0.95))
+  # Normalize column names to a consistent set
+  nm <- names(emm_df)
+  if ("emmean" %in% nm) {
+    names(emm_df)[names(emm_df) == "emmean"] <- "fit"
+  } else if ("response" %in% nm) {
+    names(emm_df)[names(emm_df) == "response"] <- "fit"
+  } else if ("prob" %in% nm) {
+    names(emm_df)[names(emm_df) == "prob"] <- "fit"
+  }
+  if ("lower.CL" %in% nm) {
+    # ok
+  } else if ("asymp.LCL" %in% nm) {
+    names(emm_df)[names(emm_df) == "asymp.LCL"] <- "lower.CL"
+  }
+  if ("upper.CL" %in% nm) {
+    # ok
+  } else if ("asymp.UCL" %in% nm) {
+    names(emm_df)[names(emm_df) == "asymp.UCL"] <- "upper.CL"
+  }
+  
+  # safety check
+  need_cols <- c(xvar, "fit", "lower.CL", "upper.CL")
+  missing_cols <- setdiff(need_cols, names(emm_df))
+  if (length(missing_cols)) {
+    stop("Missing expected columns in emm_df: ", paste(missing_cols, collapse = ", "))
+  }
+  
+  # build the plot explicitly
+  pltnow <- ggplot(emm_df, aes(x = .data[[xvar]], y = .data[["fit"]])) +
+    geom_line(linewidth = 1, color = modlinecolor) +
+    geom_ribbon(aes(ymin = .data[["lower.CL"]], ymax = .data[["upper.CL"]]),
+                alpha = 0.2, linewidth = 0, fill = modlinecolor) +
+
+  annotate("text", size= 4, x=Inf, y = Inf, label = labelnow,colour = "black",vjust = 1, hjust=hjust)+
+  ylab(ylabel)+
+  xlab(xlabel)+
+  theme_classic(base_size = 20.5) +
+  
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(legend.position="none")+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  labs(title = plottitle)
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank())
+
+ggsave(fnamepdf, width = 3.5, height = 4,dpi=300)
+ggsave(fnamepng, width = 3.5, height = 4, dpi = 600)
+}
+```
+
+
+
+One factor
+```{r}
+barPlotOnefactor <- function(tmpdf, xvar, yvar, xlab, ylab, ymin, ymax, fnpdf, fnpng, negcolor, neucolor, height, width, digits){
+ggplot(tmpdf , aes(x=get(xvar), y=get(yvar), fill = as.factor(get(xvar))))+
+  geom_bar(position=position_dodge(.7), size=.75,  width=0.48, colour="black", stat= "identity", alpha = 0.8) +
+  geom_errorbar(position=position_dodge(.7), size=.75, width=.1,
+                aes(ymin=get(yvar)-se, ymax=get(yvar)+se)) + #VAR NAME plus minus SE
+  theme_classic(base_size=20)+
+  # scale_y_continuous(expand = c(0,0),limits = c(0,2.7))+
+  coord_cartesian(ylim = c(ymin, ymax))+ # set the y limits
+  ylab(ylab)+
+  xlab(xlab)+
+  labs(title = "")+
+  scale_y_continuous(
+  labels = scales::number_format(accuracy = digits,
+                                 decimal.mark = '.'))+
+  # labs(fill="Block change condition")+
+  # theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  # theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  # theme(axis.text.x = element_text(size=rel(1)))+
+  # theme(axis.text.y = element_text(size=rel(1)))+
+  theme(legend.position = "none")+
+    theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+ 
+  #annotate("text", size= 4, x=2.3,  y = 1.75, label = "bars=SEM",  colour = "black")+
+  # from set 1 color brewer
+  scale_fill_manual(values=c(negcolor, neucolor, "#FB8072","#CC0033","#66C2A5","#339999","#66CC66", "#990033", "#FFFFCC","#FF9999","#FFFF00"))
+  # scale_x_discrete(name="Border Color",labels=c("No Change", "Change"))# usual red: "#FC8D62"
+  # guides(fill = guide_legend(override.aes = list(colour = NULL))) +
+  # theme(legend.key.width=unit(1,"line"),legend.key.height=unit(1,"line"),legend.text=element_text(size = 16))++theme( legend.position="right")
+#guides(fill=FALSE)
+ggsave(fnpdf,height=height, width=width, dpi=300, device=cairo_pdf) 
+ggsave(fnpng,height=height, width=width, dpi = 600)
+}
+```
+
+
+```{r}
+# Function to replace strings
+transform_string <- function(s){
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm_Anterior", "aHPC", s)
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm_Mid", "midHPC", s)
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm_Posterior", "pHPC", s)
+  s = gsub("harvardoxford_Hippocampus_bin60_2mm", "HPC", s)
+  s = gsub("FS_entorhinal_exvivo.thresh", "Entorhinal", s)
+  s = gsub("BA4_exvivo.thresh", "BA4", s)
+  s = gsub("V1_exvivo.thresh", "V1", s)
+  s = gsub("FS_", "", s)
+  s = gsub("Amy_50_bin", "Amygdala", s)
+  s = gsub("Amy_bin50_2mm", "Amygdala", s)
+  s = gsub("AMY", "Amygdala", s)
+  s = gsub("_2mm", "", s)
+  s = gsub("lh.L_", "Left ", s)
+  s = gsub("rh.R_", "Right ", s)  
+    s = gsub("L_", "Left ", s)
+  s = gsub("R_", "Right ", s)
+  s = gsub("perirhinal_exvivo.thresh", "PRC", s)
+  s = gsub("uni_", "", s)
+  # s = gsub("_", " ", s)
+  return (s)  
+}
+```
+to grab SE scripts
+```{r}
+pathnames <- list.files(pattern="[.]R$", path="/Users/jingyiwang/Dropbox/LEAP_Neuro_Lab/resources/R/Rfunctions/", full.names=TRUE);
+sapply(pathnames, FUN=source);
+```
+
+Set color
+```{r}
+library("colorspace")
+# hcl_palettes(plot = TRUE)
+BR<-diverging_hcl(5, palette = "Blue-Red 2")
+allcolor<-c(BR[1], BR[5], BR[2], BR[4])
+
+colorList1 <- c(sequential_hcl(7, palette = "Mint"))
+colorList2 <- c(sequential_hcl(7, palette = "Peach"))
+
+colorList3 <- c(sequential_hcl(5, palette = "Reds"))
+colorList4 <- c(sequential_hcl(5, palette = "Blues"))
+
+list_2color <- c(colorList2[3], colorList1[3])
+list_2color_1 <- c(colorList2[2], colorList1[2])
+
+list_2color_2 <- c(colorList3[3], colorList4[2])
+ 
+# Failcolor <- allcolor[5]
+# Succcolor <- allcolor[1]
+
+negcolor <- list_2color[1]
+poscolor <- list_2color[2]
+
+Failcolor <- list_2color_2[1]
+Succcolor <- list_2color_2[2]
+
+regressline <- "#424242" #another option: "#7F7EBC"; "#86BFDE"
+ribbonline <- "#BEBEBE"
+"#7F7EBC"
+"#86BFDE"
+"#E1E1E1"
+"#BEBEBE"
+highcolor <- sequential_hcl(5, palette = "Grays")[3]
+
+HPCcolor <- "#95BBD8"
+PRCcolor <- "#54D388"
+FPlcolor <- "#B64097"
+```
+Merge dataframe from different masks and loop through masks
+```{r}
+# Set working directory to source file location
+setwd("YOURRESULTSDIR/TRbyTR/RSAbymaskNew")
+
+# Load the data
+HPC <- read_csv("harvardoxford_Hippocampus_bin60_2mm_all_rsas_TRbyTR_trialwise_extended.csv")
+length(unique(HPC$sub))
+#Remove sub 007 013, since bad motion
+HPC <- HPC[!HPC$sub %in% c("007", "013","027", "081", "066", "057"),]
+length(unique(HPC$sub))
+
+aHPC <- read_csv("harvardoxford_Hippocampus_bin60_2mm_Anterior_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+aHPC <- aHPC[!aHPC$sub %in% c("007", "013","027", "081", "066", "057"),]
+
+
+pHPC <- read_csv("harvardoxford_Hippocampus_bin60_2mm_Posterior_all_rsas_TRbyTR_trialwise_extended.csv")
+# Remove sub 007 013, since bad motion
+pHPC <- pHPC[!pHPC$sub %in% c("007", "013","027", "081", "066", "057"),]
+
+
+midHPC <- read_csv("harvardoxford_Hippocampus_bin60_2mm_Mid_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+midHPC <- midHPC[!midHPC$sub %in% c("007", "013","027", "081", "066", "057"),]
+
+
+AMY <- read_csv("Amy_50_bin_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+AMY <- AMY[!AMY$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+Ent <- read_csv("FS_entorhinal_exvivo.thresh_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+Ent <- Ent[!Ent$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+midPFC <- read_csv("9-46_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+midPFC <- midPFC[!midPFC$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+midPFCd <- read_csv("9-46d_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+midPFCd <- midPFCd[!midPFCd$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+midPFCv <- read_csv("9-46v_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+midPFCv <- midPFCv[!midPFCv$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+BA4 <- read_csv("BA4_exvivo.thresh_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+BA4 <- BA4[!BA4$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+FPl <- read_csv("FS_FPl_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+FPl <- FPl[!FPl$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+FPm <- read_csv("FPm_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+FPm <- FPm[!FPm$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+
+FP <- read_csv("FP_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+FP <- FP[!FP$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+PMd <- read_csv("PMd_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+PMd <- PMd[!PMd$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+V1 <- read_csv("V1_exvivo.thresh_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+V1 <- V1[!V1$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+M1 <- read_csv("M1_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+M1 <- M1[!M1$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+PRC <- read_csv("perirhinal_exvivo.thresh_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+PRC <- PRC[!PRC$sub %in% c("007", "013", "027", "081", "066", "057"),]
+
+BA25 <- read_csv("25_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+BA25 <- BA25[!BA25$sub %in% c("007", "013", "027", "081", "066", "057"),]
+BA25$mask <- as.character(BA25$mask)
+
+BA32 <- read_csv("32pl_all_rsas_TRbyTR_trialwise_extended.csv")
+#Remove sub 007 013, since bad motion
+BA32 <- BA32[!BA32$sub %in% c("007", "013", "027", "081", "066", "057"),]
+```
+
+Merge
+```{r}
+# myDataAll <- dplyr::bind_rows(aHPC, midHPC, pHPC, HPC, AMY, FPl, Ent, RaHPC, RpHPC, RmidHPC, RHPC, RAMY, LaHPC, LpHPC, LmidHPC, LHPC, LAMY, RBLcx, LBLcx, BLcx)
+myDataAll <- dplyr::bind_rows(aHPC, midHPC, pHPC, HPC, AMY, FPl, Ent, midPFC, midPFCd, midPFCv, PMd, V1, FP, FPm, BA4, M1, PRC, BA25, BA32)
+nrow(myDataAll)
+```
+
+add a column for TR pairs
+```{r}
+myDataAll$TRpairs <- paste(myDataAll$TR1, myDataAll$TR2, sep="_")
+```
+Set factors
+```{r}
+myDataAll$TRpairs <- as.factor(as.character(myDataAll$TRpairs))
+myDataAll$aromn <- as.numeric(myDataAll$aromn)
+myDataAll$valmn <- as.numeric(myDataAll$valmn)
+myDataAll$StimVal <- as.factor(myDataAll$StimVal)
+myDataAll$PerciseBiasFlag <- as.factor(myDataAll$PerciseBiasFlag)
+myDataAll$PercisepChanceFlag <- as.factor(myDataAll$PercisepChanceFlag)
+myDataAll$RunBias1Flag <- as.factor (myDataAll$RunBias1Flag)
+myDataAll$RunBias2Flag <- as.factor(myDataAll$RunBias2Flag)
+myDataAll$sub <- as.numeric(as.character(myDataAll$sub))
+myDataAll$ReconMem <- as.factor(myDataAll$ReconMem)
+levels(myDataAll$ReconMem) <- c("Recognized", "Forgotten")
+```
+
+add actiongoal column
+```{r}
+myDataAll <- myDataAll %>% mutate(ActionGoal = case_when(condition == "neg_app" ~ "Apporach", condition == "pos_app" ~ "Apporach", condition == "neg_avoid" ~ "Avoid", condition == "pos_avoid" ~ "Avoid"))
+myDataAll$ActionGoal <- as.factor(myDataAll$ActionGoal)
+```
+add order_final column
+```{r}
+myDataAll <- myDataAll %>% mutate(order_final = case_when(order == 1 & sub%%2==0 ~ 1, order == 1 & sub%%2!=0 ~ 2, order == 2 & sub%%2==0 ~ 3, order == 2 & sub%%2!=0 ~ 4, order == 5 & sub%%2==0 ~ 5, order == 5 & sub%%2!=0 ~ 6, order == 6 & sub%%2==0 ~ 7, order == 6 & sub%%2!=0 ~ 8))
+myDataAll$order_final <- as.factor(myDataAll$order_final)
+```
+**Add the TempMem sign flag**
+```{r}
+myDataAll <- myDataAll %>% mutate(TempMem_sign = case_when(Tprecise_bias < 0 ~ -1, Tprecise_bias > 0 ~ 1))
+myDataAll$TempMem_sign <- as.factor(myDataAll$TempMem_sign)
+levels(myDataAll$TempMem_sign) <- c("End", "Beginning")
+```
+
+**reverse the Tprecise_bias so that Estimates - Actual position**
+Larger bias -> towards End
+Smaller bias -> towards beginning
+```{r}
+myDataAll$Tprecise_bias <- (-1) * myDataAll$Tprecise_bias
+```
+
+**Add the TrealCat: Early, Mid, Late**
+```{r}
+myDataAll <- myDataAll %>%
+  group_by(sub) %>%
+  mutate(
+    TrealCat = case_when(
+      Treal_precise <= quantile(Treal_precise, 1/3, na.rm = TRUE) ~ "Early",
+      Treal_precise <= quantile(Treal_precise, 2/3, na.rm = TRUE) ~ "Mid",
+      TRUE ~ "Late"
+    )
+  ) %>%
+  ungroup()
+
+myDataAll$TrealCat <- as.factor(myDataAll$TrealCat)
+levels(myDataAll$TrealCat)
+```
+
+
+Add the Img parameters
+```{r}
+setwd("YOURRESULTSDIR/LumCal/ASAPstim")
+# lum <- read.table("img_statistics.txt", header = TRUE)
+lum <- read.delim("img_statistics.txt", sep = "\t", header = TRUE)
+```
+```{r}
+#remove .jpg
+lum$Img <- sub("\\.jpg$", "", lum$Img)
+
+# Rename the column to 'ImgStim'
+names(lum)[names(lum) == "Img"] <- "ImgStim"
+```
+
+Merge
+```{r}
+nrow(myDataAll)
+myDataAll <- dplyr::left_join(myDataAll, lum, by=c("ImgStim"))
+nrow(myDataAll)
+myDataAll$lum_rgb <- as.numeric (myDataAll$lum_rgb)
+```
+
+##Load univariate betas with pre-whitten values
+```{r}
+HPC_whitten <- read.csv("YOURRESULTSDIR/AMY_uni/harvardoxford_Hippocampus_bin60_2mm_univariate.csv")
+HPC_whitten<- HPC_whitten[HPC_whitten$mask=="harvardoxford_Hippocampus_bin60_2mm",]
+nrow(HPC_whitten)
+PRC_whitten <- read.csv("YOURRESULTSDIR/AMY_uni/perirhinal_exvivo.thresh_univariate.csv")
+PRC_whitten <- PRC_whitten[PRC_whitten$mask=="perirhinal_exvivo.thresh",]
+nrow(PRC_whitten)
+AMY_whitten <- read.csv("YOURRESULTSDIR/AMY_uni/Amy_50_bin_univariate.csv")
+AMY_whitten <- AMY_whitten[AMY_whitten$mask=="Amy_50_bin",]
+nrow(AMY_whitten)
+FPl_whitten <- read.csv("YOURRESULTSDIR/AMY_uni/FPl_univariate.csv")
+FPl_whitten <- FPl_whitten[FPl_whitten$mask=="FPl",]
+nrow(FPl_whitten)
+```
+Merge
+```{r}
+nrow(myDataAll)
+colnames(HPC_whitten) <- c("sub", "mask", "run", "trial", "ImgStim", "value_HPC", "uni_whiten_HPC")
+HPC_whitten <- HPC_whitten %>% select("sub", "run", "trial", "ImgStim", "uni_whiten_HPC")
+# HPC_whitten$trial <- as.factor(HPC_whitten$trial)
+myDataAll <- dplyr::left_join(myDataAll, HPC_whitten, by = c("sub", "run", "trial", "ImgStim"))
+nrow(myDataAll)
+
+colnames(AMY_whitten) <- c("sub", "mask", "run", "trial", "ImgStim", "value_AMY", "uni_whiten_AMY")
+AMY_whitten <- AMY_whitten %>% select("sub", "run", "trial", "ImgStim", "uni_whiten_AMY")
+# AMY_whitten$trial <- as.factor(AMY_whitten$trial)
+myDataAll <- dplyr::left_join(myDataAll, AMY_whitten, by = c("sub", "run", "trial", "ImgStim"))
+nrow(myDataAll)
+
+colnames(PRC_whitten) <- c("sub", "mask", "run", "trial", "ImgStim", "value_PRC", "uni_whiten_PRC")
+PRC_whitten <- PRC_whitten %>% select("sub", "run", "trial", "ImgStim", "uni_whiten_PRC")
+# PRC_whitten$trial <- as.factor(PRC_whitten$trial)
+myDataAll <- dplyr::left_join(myDataAll, PRC_whitten, by = c("sub", "run", "trial", "ImgStim"))
+nrow(myDataAll)
+
+colnames(FPl_whitten) <- c("sub", "mask", "run", "trial", "ImgStim", "value_FPl", "uni_whiten_FPl")
+FPl_whitten <- FPl_whitten %>% select("sub", "run", "trial", "ImgStim", "uni_whiten_FPl")
+# FPl_whitten$trial <- as.factor(FPl_whitten$trial)
+myDataAll <- dplyr::left_join(myDataAll, FPl_whitten, by = c("sub", "run", "trial", "ImgStim"))
+nrow(myDataAll)
+```
+
+**Add Temporal Memory filter column**
+```{r}
+TempMemppBad <- c(5, 6, 11, 13, 30, 36, 38, 53, 54, 64)
+myDataAll <- myDataAll %>%
+  mutate(
+    TempMemfilter = if_else(sub %in% TempMemppBad, 0, 1)
+  )
+
+myDataAll_memfiltered <- myDataAll[myDataAll$TempMemfilter != 0,]
+length(unique(myDataAll_memfiltered$sub))
+```
+
+
+**Get behaviral results here**
+Create Bev data
+```{r}
+myDatabev <- myDataAll %>% group_by(sub, run, trial) %>% dplyr::summarize(CDA.ISCRsqrtcheck = first(CDA.ISCRsqrt), CDA.ISCRsqrt = mean(CDA.ISCRsqrt, na.rm=TRUE), StimVal = first(StimVal), ActionGoal = first(ActionGoal), Tprecise_biasabs = first(Tprecise_biasabs), Tprecise_bias = first(Tprecise_bias), order_final = first(order_final), uni_whiten_AMY = first(uni_whiten_AMY), uni_whiten_HPC = first(uni_whiten_HPC), uni_whiten_PRC = first(uni_whiten_PRC), uni_whiten_EC = first(uni_whiten_EC), uni_whiten_FPl = first(uni_whiten_FPl), ReconMem = first(ReconMem), ConfReconMem = first(ConfReconMem), ConfCoarseMem = first(ConfCoarseMem), valmn = first(valmn), aromn = first(aromn), CDA_tonicsqrt = first(CDA_tonicsqrt), TempMem_sign = first(TempMem_sign), Treal_precise = first(Treal_precise), TrealCat = first(TrealCat))
+myDatabev_memfiltered <- myDatabev[!myDatabev$sub %in% TempMemppBad,]
+```
+
+```{r}
+myDataAll$TrealCat <- fct_relevel(
+  myDataAll$TrealCat,
+  "Early", "Mid", "Late"
+)
+
+myDataAll_memfiltered$TrealCat <- fct_relevel(
+  myDataAll_memfiltered$TrealCat,
+  "Early", "Mid", "Late"
+)
+```
+
+
+##Emotion influence on temporal memory
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~valmn+ActionGoal+ ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~valmn*ActionGoal+ ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~valmn+ActionGoal+ ActionGoal+order_final+ ReconMem + (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+directional temporal memory
+```{r}
+tmpmod <- lmer(Tprecise_bias~valmn+aromn + ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+```{r}
+tmpmod <- lmer(Tprecise_bias~valmn+aromn + ReconMem + ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+plot
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/valmnTempMem.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/valmnTempMem.png"
+
+xlabel<-"Normative Valence Rating"
+ylabel<- "Temporal Memory Error (abs)"
+plotTitle <- ""
+
+myGroupCorrelation_group_nosub(myDatabev_memfiltered, "Tprecise_biasabs", "Tprecise_biasabs~valmn+aromn + ActionGoal+order_final+ (valmn|sub)", "valmn", "Tprecise_biasabs", xlabel, ylabel, highcolor, regressline, plotTitle, fnamepdf, fnamepng, 1.4)
+```
+plot
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/aromnTempMem.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/aromnTempMem.png"
+
+xlabel<-"Normative Arousal Rating"
+ylabel<- "Temporal Memory Error (abs)"
+plotTitle <- ""
+
+myGroupCorrelation_group_nosub(myDatabev_memfiltered, "Tprecise_biasabs", "Tprecise_biasabs~aromn + valmn + ActionGoal+order_final+ (valmn|sub)", "aromn", "Tprecise_biasabs", xlabel, ylabel, highcolor, regressline, plotTitle, fnamepdf, fnamepng, 1.4)
+```
+
+
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~valmn*aromn + ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+Plot interaction
+```{r}
+#plot interaction
+fname = "YOURRESULTSDIR/Figures/RawPlots/Interaction_ValmnAromn_Bias.pdf"
+ylabel = "Temporal Memory Error (abs)"
+#Plot it
+interact_plot(tmpmod, pred=aromn, modx = valmn, x.label = "Normative Arousal Rating", y.label = ylabel, interval = TRUE,  line.thickness = 1, int.type = "confidence", 
+              legend.main = "Normative Valence",
+              legend.labels = c("Positive", "Mean", "Negative"), colors = c(negcolor, "#93C5DE", poscolor))+ theme_classic(18)+ scale_linetype_manual(values = c("solid", "solid", "solid"))+
+      theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+    theme(legend.title = element_text(size = rel(0.85)), legend.text = element_text(size = rel(0.65)))
+
+ggsave(fname,height=3.5, width=6, dpi=300, device=cairo_pdf)
+```
+
+
+##Emotional effect on item memory 
+```{r}
+myDatabev_memfiltered <- myDatabev_memfiltered %>%
+  mutate(ReconMemNum = ifelse(ReconMem == "Forgotten", 0, 1))
+myDatabev <- myDatabev %>%
+  mutate(ReconMemNum = ifelse(ReconMem == "Forgotten", 0, 1))
+```
+
+
+```{r}
+tmpmod <- glmer(ReconMemNum ~ aromn+ ActionGoal+order_final+ (valmn|sub), data=myDatabev,family = binomial)
+summary(tmpmod)
+car::Anova(tmpmod, type=3)
+```
+
+plot
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/aromnReconMem.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/aromnReconMem.png"
+
+xlabel<-"Normative Arousal Rating"
+ylabel<- "Probability of Remembering"
+plotTitle <- ""
+
+myGroupCorrelation_group_nosub_glmer(myDatabev, "ReconMemNum", "ReconMemNum ~ aromn+ ActionGoal+order_final+ (valmn|sub)", "aromn", "ReconMemNum", xlabel, ylabel, highcolor, regressline, plotTitle, fnamepdf, fnamepng, 1)
+```
+
+```{r}
+tmpmod <- glmer(ReconMemNum ~ valmn+ ActionGoal+order_final+ (valmn|sub), data=myDatabev,family = binomial)
+summary(tmpmod)
+car::Anova(tmpmod, type=3)
+```
+plot
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/valmnReconMem.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/valmnReconMem.png"
+
+xlabel<-"Normative Valence Rating"
+ylabel<- "Probability of Remembering"
+plotTitle <- ""
+
+myGroupCorrelation_group_nosub_glmer(myDatabev, "ReconMemNum", "ReconMemNum ~ valmn+ ActionGoal+order_final+ (valmn|sub)", "valmn", "ReconMemNum", xlabel, ylabel, highcolor, regressline, plotTitle, fnamepdf, fnamepng, 1)
+```
+
+
+##Relationship between Item memory and Temporal Memory
+percent of remember
+```{r}
+groupdf <- myDatabev %>% group_by(sub) %>% dplyr::summarize(Percent=mean(ReconMem=="Recognized", na.rm=TRUE))
+mean(groupdf$Percent)
+sd(groupdf$Percent)
+```
+
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~ ReconMem + valmn + aromn + ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered,REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+plot
+```{r}
+"#6D6E71"
+"#BCBEC0"
+library(dplyr)
+groupdf<-myDatabev_memfiltered %>% group_by(sub, ReconMem)%>%dplyr::summarize(Tprecise_biasabs = mean(Tprecise_biasabs, na.rm=TRUE))
+detach("package:dplyr", force=TRUE)
+sumdf <- summarySEwithin(groupdf, measurevar="Tprecise_biasabs", idvar="sub",withinvars=c("ReconMem"), na.rm=TRUE, conf.interval=.95)
+xlab = "Item Memory"
+ylab = "Temporal Memory Error (abs)"
+ymin = min(sumdf$Tprecise_biasabs) - 4*max(sumdf$se)
+ymax =  max(sumdf$Tprecise_biasabs) + 4*max(sumdf$se)
+fnpdf = "YOURRESULTSDIR/Figures/RawPlots/TempMemvsItemMem.pdf"
+fnpng = "YOURRESULTSDIR/Figures/RawPlots/TempMemvsItemMem.png"
+barPlotOnefactor(sumdf, "ReconMem", "Tprecise_biasabs", xlab, ylab, ymin, ymax, fnpdf,fnpng, "#FFFFFF", "#6D6E71", height = 4, width= 3.4, 0.1)
+```
+
+
+Frequency plot for Item memory
+```{r}
+# Plot the histogram using ggplot2
+ggplot(myDatabev, aes(y = ..density..,x = ConfReconMem)) +
+  geom_histogram(binwidth = 1, fill = "#b3b3b3", color = "black", size = 0.1) +
+  labs(x = "Item Memory Confidence", y = "Frequency") +
+  theme_classic(base_size=11)+
+  # theme(plot.title = element_blank())+
+  theme(axis.text.y = element_text(size=rel(1)))+ 
+  labs(title = "All trials")+
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(expand = c(0,0), labels = scales::number_format(accuracy = 0.1))
+  # scale_x_continuous(expand = c(0,0), limits = c(-0.25,0.25), labels = scales::number_format(accuracy = 0.1))
+
+ggsave("YOURRESULTSDIR/Figures/RawPlots/ItemMemConfDistribution.pdf",height=2.3, width=2.3, dpi=300, device=cairo_pdf)
+```
+
+### TempMem ~ Item memory strength * TrealCat (session time)
+```{r}
+myDatabev_memfiltered_recon <- myDatabev_memfiltered[myDatabev_memfiltered$ReconMem == "Remembered",]
+myDatabev_memfiltered_recon$TrealCat <-
+  factor(myDatabev_memfiltered_recon$TrealCat,
+         levels = c("Late", "Mid", "Early"))
+tmpmod <- lmer(Tprecise_biasabs~ ConfReconMem*TrealCat + valmn + aromn + ActionGoal+order_final+ (valmn + ActionGoal|sub), data=myDatabev_memfiltered_recon,REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+test coeffient significance
+```{r}
+trends <- lstrends(tmpmod, pairwise ~ TrealCat, var = "ConfReconMem", pbkrtest.limit = 12552)
+summary(trends)
+```
+```{r}
+# Extract estimated trends
+trends_estimates <- trends$lstrends
+
+# Test if the slopes are significantly different from 0
+tests <- test(trends_estimates)
+tests
+# Summarize the tests to get p-values
+summary(tests)
+```
+```{r}
+#plot interaction
+fname = "YOURRESULTSDIR/Figures/RawPlots/Interaction_RealTime_TempBiasabsConfMem.pdf"
+ylabel = "Temporal Memory Error (abs)"
+#Plot it
+p <- interact_plot(tmpmod, pred=ConfReconMem, modx = TrealCat,
+              modx.values = c("Early","Mid","Late"),  legend = "Session Time", x.label = "Item Memory Confidence", y.label = ylabel, interval = TRUE,  line.thickness = 1,linetypes = rep("solid", 3), int.type = "confidence", colors = c("#C8E5CC", "#9FCDB1", "#12AD4B"))+ theme_classic(20)+
+scale_linetype_manual(values = c("solid", "solid", "solid"))+
+  
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1,))+
+  labs(title = "")
+
+ggsave(fname,height=4, width=6, dpi=300, device=cairo_pdf)
+```
+
+##Confidence level for temporal memory and item memory
+```{r}
+describe(myDataAll_memfiltered$ConfCoarseMem)
+describe(myDataAll_memfiltered$ConfReconMem)
+```
+```{r}
+sumdf <- myDataAll_memfiltered %>% 
+  group_by(ConfCoarseMem) %>% 
+  dplyr::summarise(n = n()) %>% 
+  mutate(percent = 100 * n / sum(n))
+```
+
+```{r}
+sumdf <- myDataAll_memfiltered %>% 
+  group_by(ConfReconMem) %>% 
+  dplyr::summarise(n = n()) %>% 
+  mutate(percent = 100 * n / sum(n))
+```
+
+
+Temporal memroy confidence distribution
+```{r}
+# Plot the histogram using ggplot2
+ggplot(myDataAll_memfiltered, aes(y = ..density..,x = ConfCoarseMem)) +
+  geom_histogram(binwidth = 1, fill = "#b3b3b3", color = "black", size = 0.1) +
+  labs(x = "Temporal Memory Confidence", y = "Frequency") +
+  theme_classic(base_size=11)+
+  # theme(plot.title = element_blank())+
+  theme(axis.text.y = element_text(size=rel(1)))+ 
+  labs(title = "All trials")+
+  # theme(axis.title.x = element_blank())+
+  scale_y_continuous(expand = c(0,0), labels = scales::number_format(accuracy = 0.1))
+  # scale_x_continuous(expand = c(0,0), limits = c(-0.25,0.25), labels = scales::number_format(accuracy = 0.1))
+
+ggsave("YOURRESULTSDIR/Figures/RawPlots/TempMemConfDistribution.pdf",height=2.3, width=2.4, dpi=300, device=cairo_pdf)
+```
+
+
+##Relationship between amygdala activation and emotion
+```{r}
+tmpmod <- lmer(uni_whiten_AMY ~ valmn + aromn +ActionGoal+order_final+ (valmn + ActionGoal|sub), data=myDatabev, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_AMY_Valmn.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_AMY_Valmn.png"
+# "#2859BB"
+# '#1627BB'
+
+ylabel<-"Amygdala Activation"
+xlabel<-"Normative Valence Rating"
+plotTitle <- ""
+
+myGroupCorrelation_group_nosub(myDatabev, "uni_whiten_AMY", "uni_whiten_AMY ~ valmn + aromn +ActionGoal+order_final+ (valmn + ActionGoal|sub)","valmn","uni_whiten_AMY",  xlabel, ylabel, highcolor, "#424242", plotTitle, fnamepdf, fnamepng, 1)
+```
+
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_AMY_Aromn.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_AMY_Aromn.png"
+# "#2859BB"
+# '#1627BB'
+
+ylabel<-"Amygdala Activation"
+xlabel<-"Normative Arousal Rating"
+plotTitle <- ""
+
+myGroupCorrelation_group_nosub(myDatabev, "uni_whiten_AMY", "uni_whiten_AMY ~ aromn + valmn +ActionGoal+order_final+ (valmn + ActionGoal|sub)","aromn","uni_whiten_AMY",  xlabel, ylabel, highcolor, "#424242", plotTitle, fnamepdf, fnamepng, 1)
+```
+
+##Relationship between amygdala activation and temporal memory
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~uni_whiten_AMY + valmn + aromn +ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_AMY_TempMem.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_AMY_TempMem.png"
+# "#2859BB"
+# '#1627BB'
+
+xlabel<-"Amygdala Activation"
+ylabel<-"Temporal Memory Error (abs)"
+plotTitle <- ""
+
+
+myGroupCorrelation_group_sub(myDatabev_memfiltered, "uni_whiten_AMY", "Tprecise_biasabs~uni_whiten_AMY + valmn +ActionGoal+order_final+ (valmn|sub)","uni_whiten_AMY","Tprecise_biasabs",  xlabel, ylabel, highcolor, "#EAA48F", plotTitle, fnamepdf, fnamepng, 1)
+```
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~uni_whiten_AMY + ReconMem + valmn + aromn +ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+##Relationship between perirhinal activation and emotion
+```{r}
+tmpmod <- lmer(uni_whiten_PRC ~ valmn + aromn +ActionGoal+order_final+ (valmn+ActionGoal|sub), data=myDatabev, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/Corr_uniPRCwhiten_valmn.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/Corr_uniPRCwhiten_valmn.png"
+# "#2859BB"
+# '#1627BB'
+
+xlabel<-"Normative Valence Rating"
+ylabel<-"Perirhinal Activity"
+plotTitle <- ""
+
+myGroupCorrelation_group_nosub(myDatabev, "uni_whiten_AMY", "uni_whiten_AMY ~ valmn + aromn +ActionGoal+order_final+ (valmn+ActionGoal|sub)", "valmn", "uni_whiten_AMY",  xlabel, ylabel, highcolor, "#54D388", plotTitle, fnamepdf, fnamepng, 1.4)
+```
+
+##Relationship between perirhinal and amygdala activation
+```{r}
+tmpmod <- lmer(uni_whiten_PRC ~ uni_whiten_AMY+ valmn + aromn +ActionGoal+order_final+ (valmn + ActionGoal|sub), data=myDatabev, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/Corr_uniPRC_uniAMYwhiten.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/Corr_uniPRC_uniAMYwhiten.png"
+# "#2859BB"
+# '#1627BB'
+
+xlabel<-"Amygdala Activity"
+ylabel<-"Perirhinal Activity"
+plotTitle <- ""
+
+myGroupCorrelation_group_sub(myDatabev, "uni_whiten_PRC", "uni_whiten_PRC ~ uni_whiten_AMY+ valmn + aromn +ActionGoal+order_final+ (valmn|sub)", "uni_whiten_AMY", "uni_whiten_PRC",  xlabel, ylabel, highcolor, "#54D388", plotTitle, fnamepdf, fnamepng, 1)
+```
+
+
+##Relationship between perirhinal activation and item memory
+
+```{r}
+tmpmod <- lmer(uni_whiten_PRC~ ReconMem*ConfReconMem + valmn + aromn + ActionGoal+order_final+ (ActionGoal + valmn|sub), data=myDatabev_memfiltered,REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+test coeffient significance
+```{r}
+trends <- lstrends(tmpmod, pairwise ~ ReconMem, var = "ConfReconMem", pbkrtest.limit = 12552)
+summary(trends)
+```
+```{r}
+# Extract estimated trends
+trends_estimates <- trends$lstrends
+
+# Test if the slopes are significantly different from 0
+tests <- test(trends_estimates)
+tests
+# Summarize the tests to get p-values
+summary(tests)
+```
+
+```{r}
+#plot interaction
+fname = "YOURRESULTSDIR/Figures/RawPlots/uniwhitePRCvsItemMemConfinter.pdf"
+ylabel = "Perirhinal Activation"
+#Plot it
+p <- interact_plot(tmpmod, pred=ConfReconMem, modx = ReconMem,  x.label = "Item Memory Confidence", legend.main = "Item Memory", y.label = ylabel, interval = TRUE,  line.thickness = 1, int.type = "confidence", colors = c("#6D6E71", "#BCBEC0"))+ theme_classic(20)+
+  
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1,))+
+  labs(title = "")
+
+ggsave(fname,height=4, width=6.5, dpi=300, device=cairo_pdf)
+```
+
+
+Plot remembered only with dot plots
+```{r}
+reconOnly <- myDatabev_memfiltered[myDatabev_memfiltered$ReconMem == "Remembered",]
+library(dplyr)
+groupdf<-reconOnly %>% group_by(sub, ConfReconMem)%>%dplyr::summarize(uni_whiten_PRC = mean(uni_whiten_PRC, na.rm=TRUE))
+detach("package:dplyr", force=TRUE)
+sumdf <- summarySEwithin(groupdf, measurevar="uni_whiten_PRC", idvar="sub",withinvars=c("ConfReconMem"), na.rm=TRUE, conf.interval=.95)
+xlab = "Item Memory Confidence"
+ylab = "Perirhinal Activation"
+ymin = min(sumdf$uni_whiten_PRC) - 1*max(sumdf$se)
+ymax =  max(sumdf$uni_whiten_PRC) + 1*max(sumdf$se)
+fnpdf = "YOURRESULTSDIR/Figures/RawPlots/PRCvsItemMemConfDotPlot.pdf"
+fnpng = "YOURRESULTSDIR/Figures/RawPlots/PRCvsItemMemConfDotPlot.png"
+
+dotPlotOnefactor(sumdf, "ConfReconMem", "uni_whiten_PRC", xlab, ylab,  ymin, ymax, fnpdf, fnpng, "#1F1F1F", 4, 3.4, 0.1)
+##54D388
+```
+
+
+##Relationship between perirhinal activation and temporal memory 
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~uni_whiten_PRC + valmn + aromn + ActionGoal+order_final+ (ActionGoal + valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+```{r}
+fnamepdf<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_PRC_TempMem.pdf"
+fnamepng<-"YOURRESULTSDIR/Figures/RawPlots/uni_whiten_PRC_TempMem.png"
+# "#2859BB"
+# '#1627BB'
+
+xlabel<-"Perirhinal Activition"
+ylabel<-"Temporal Memory Error (abs)"
+plotTitle <- ""
+
+
+myGroupCorrelation_group_sub(myDatabev_memfiltered, "uni_whiten_PRC", "Tprecise_biasabs~uni_whiten_PRC + valmn +ActionGoal+order_final+ (valmn|sub)","uni_whiten_PRC", "Tprecise_biasabs", xlabel, ylabel, highcolor, "#54D388", plotTitle, fnamepdf, fnamepng, 1)
+```
+```{r}
+tmpmod <- lmer(Tprecise_biasabs~uni_whiten_PRC + ReconMem + valmn + aromn +ActionGoal+order_final+ (ActionGoal+valmn|sub), data=myDatabev_memfiltered, REML =FALSE)
+summary(tmpmod)
+anova(tmpmod)
+```
+
+
+###Interaction model: perirhinal activation and sesion time
+```{r}
+    tmpmod <- lmer(Tprecise_biasabs~uni_whiten_PRC*TrealCat+valmn+aromn+ActionGoal+order_final+ (ActionGoal+valmn|sub), data=myDatabev_memfiltered, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+
+```{r}
+    tmpmod <- lmer(Tprecise_biasabs~uni_whiten_PRC*TrealCat+ReconMem + valmn+aromn+ActionGoal+order_final+ (ActionGoal+valmn|sub), data=myDatabev_memfiltered, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+test coeffient significance
+```{r}
+trends <- lstrends(tmpmod, pairwise ~ TrealCat, var = "uni_whiten_PRC", pbkrtest.limit = 12552)
+summary(trends)
+```
+```{r}
+# Extract estimated trends
+trends_estimates <- trends$lstrends
+
+# Test if the slopes are significantly different from 0
+tests <- test(trends_estimates)
+tests
+# Summarize the tests to get p-values
+summary(tests)
+```
+```{r}
+#plot interaction
+fname = "YOURRESULTSDIR/Figures/RawPlots/Interaction_RealTimePRCwhiten_TempBiasAbsCat.pdf"
+ylabel = "Temporal Memory Error (abs)"
+#Plot it
+p <- interact_plot(tmpmod, pred=uni_whiten_PRC, modx = TrealCat,
+              modx.values = c("Early","Mid","Late"),  legend = "Session Time", x.label = "Perirhinal Activation", y.label = ylabel, interval = TRUE,  line.thickness = 1,linetypes = rep("solid", 3), int.type = "confidence", colors = c("#C8E5CC", "#9FCDB1", "#12AD4B"))+ theme_classic(20)+
+scale_linetype_manual(values = c("solid", "solid", "solid"))+
+  
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1,))+
+  labs(title = "")
+
+ggsave(fname,height=4, width=6, dpi=300, device=cairo_pdf)
+```
+
+
+```{r}
+    tmpmod <- lmer(Tprecise_bias~uni_whiten_PRC*TrealCat+ ReconMem +valmn+aromn+ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+
+```{r}
+    tmpmod <- lmer(Tprecise_bias~uni_whiten_PRC*TrealCat+valmn+aromn+ActionGoal+order_final+ (valmn|sub), data=myDatabev_memfiltered, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+test coeffient significance
+```{r}
+trends <- lstrends(tmpmod, pairwise ~ TrealCat, var = "uni_whiten_PRC", pbkrtest.limit = 12552)
+summary(trends)
+```
+```{r}
+# Extract estimated trends
+trends_estimates <- trends$lstrends
+
+# Test if the slopes are significantly different from 0
+tests <- test(trends_estimates)
+tests
+# Summarize the tests to get p-values
+summary(tests)
+```
+```{r}
+#plot interaction
+fname = "YOURRESULTSDIR/Figures/RawPlots/Interaction_RealTimePRCwhiten_TempBiasCat.pdf"
+ylabel = "Temporal Memory Error"
+#Plot it
+p <- interact_plot(tmpmod, pred=uni_whiten_PRC, modx = TrealCat,
+              modx.values = c("Early","Mid","Late"),  legend = "Session Time", x.label = "Perirhinal Activation", y.label = ylabel, interval = TRUE,  line.thickness = 1,linetypes = rep("solid", 3), int.type = "confidence", colors = c("#C8E5CC", "#9FCDB1", "#12AD4B"))+ theme_classic(20)+
+scale_linetype_manual(values = c("solid", "solid", "solid"))+
+  
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  labs(title = "")
+
+ggsave(fname,height=4, width=6, dpi=300, device=cairo_pdf)
+```
+
+
+#Relationship between within-trial pattern correlation and temporal memory accuracy
+**Plot the TR by TR autocorrelation by mask**
+```{r}
+masks<-c("harvardoxford_Hippocampus_bin60_2mm", "FS_FPl")
+for (ThisMask in masks){
+  myData_subset= subset(myDataAll_memfiltered, mask==ThisMask)
+  ylabel=sprintf("%s Autocorrelation (z)", transform_string(ThisMask))
+  fnamepdf=sprintf("YOURRESULTSDIR/Figures/RawPlots/%s_TRpairs_autocorrelation.pdf", ThisMask)
+  fnamepng=sprintf("YOURRESULTSDIR/Figures/RawPlots/%s_TRpairs_autocorrelation.png", ThisMask)
+  #neg vs pos
+  tmp_subset <- myData_subset[myData_subset$TRpairs %in% c("0_1", "1_2", "2_3", "3_4") & myData_subset$PerciseBiasFlag %in% c("MemSuccess", "MemFail"),]
+  
+  if (ThisMask == "harvardoxford_Hippocampus_bin60_2mm"){
+  colorvalue = c("#BDDDEE", "#077EAD")
+}
+else if (ThisMask == "FS_FPl"){
+  colorvalue = c("#D6BFD1", "#AD4993")
+}
+else{colorvalue = c("#BEBEBE", "#424242")}
+  
+  #calculate summary 
+  library(dplyr)
+  tmp_subset<-tmp_subset %>% group_by(sub, PerciseBiasFlag, TRpairs)%>%dplyr::summarize(corr_z=mean(corr_z, na.rm=TRUE))
+  detach("package:dplyr", force=TRUE)
+  tmp_negpos_sum <- summarySEwithin(tmp_subset, measurevar="corr_z",  idvar=c("sub"),withinvars=c("PerciseBiasFlag", "TRpairs"), na.rm=TRUE, conf.interval=.95)
+  library(dplyr)
+  ymax <- max(tmp_negpos_sum$corr_z) + max(tmp_negpos_sum$se)
+  #plot lines and save
+  # Line plot with multiple groups
+ggplot(data=tmp_negpos_sum, aes(x=TRpairs, y=corr_z, group=PerciseBiasFlag)) +
+  geom_errorbar(aes(ymin=corr_z-se, ymax=corr_z+se), width=.1) +
+  geom_line(aes(color=PerciseBiasFlag), size = 0.4)+
+  geom_point(aes(color=PerciseBiasFlag), size = 0.4)+
+  ylab(ylabel)+
+  xlab("TR pairs")+
+  theme(legend.position = "right")+
+  # annotate(
+  #     "text", x = Inf, y = ymax+0.005, label = text_label, 
+  #     hjust = 1, vjust = 1, size = 3, color = "black") +
+  scale_color_manual(values=colorvalue, name = "Temporal Memory",labels = c("Low", "High"))+
+theme_classic(base_size = 20) +
+  theme(axis.title.y = element_text(size = rel(1), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(1), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(1)))+
+  theme(axis.text.y = element_text(size=rel(1)))+
+  # theme(legend.position="none")+
+  theme(axis.line = element_line(colour = 'black', size = 0.5))+
+  theme(axis.ticks = element_line(colour = "black", size = 0.5))+
+      theme(axis.title.y = element_text(size = rel(0.85), angle = 90,  vjust=1.25))+
+  theme(axis.title.x = element_text(size = rel(0.85), angle = 0,  vjust=0))+
+  theme(axis.text.x = element_text(size=rel(0.85)))+
+  theme(axis.text.y = element_text(size=rel(0.85)))+
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.01,))+
+  labs(title = "")
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank())
+ ggsave(fnamepdf,height=4, width=7, dpi=300)
+  ggsave(fnamepng,height=4, width=7, dpi=300)
+  
+}
+```
+FPl
+```{r}
+myData_subset= subset(myDataAll_memfiltered, mask=="FS_FPl")
+  tmp_subset <- myData_subset[myData_subset$TRpairs %in% c("0_1", "1_2", "2_3", "3_4") & myData_subset$PerciseBiasFlag %in% c("MemSuccess", "MemFail"),]
+  mod <- lmer(corr_z~PerciseBiasFlag*TRpairs + valmn + aromn + ActionGoal + order + lum_rgb + (valmn + ActionGoal|sub), control = lmerControl(optimizer = "bobyqa"), data=tmp_subset, REML =FALSE)
+  summary(mod)
+  anova(mod)
+  emmeans(mod, pairwise ~ PerciseBiasFlag*TRpairs, adjust = "none")
+```
+
+##Relationship between within-trial pattern correlation and temporal memory accuracy (linear) 
+```{r}
+corrBeta <- c()
+corrp <- c()
+
+valmnbeta <- c()
+valmnp <- c()
+
+aromnbeta <- c()
+aromnp <- c()
+
+ActionGoalbeta <- c()
+ActionGoalp <- c()
+
+Maskli <- c()
+TRpairli <- c()
+
+maskli <- c("FS_FPl", "harvardoxford_Hippocampus_bin60_2mm")
+for (tmpMask in maskli){
+# for (tmpMask in unique(myDataAll_memfiltered$mask)){
+  for (TRnow in c("3_4")){
+    #test
+    #tmpMask <- "FS_FPl"
+    #TRnow <- "3_4"
+    tmpdf <- myDataAll_memfiltered[myDataAll_memfiltered$mask==tmpMask & myDataAll_memfiltered$TRpairs==TRnow,]
+    
+    tmpmod <- lmer(Tprecise_biasabs~corr_z + valmn + aromn + ActionGoal+order_final+ lum_rgb+ (ActionGoal + valmn|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summod <- summary(tmpmod)
+    aovmod <- anova(tmpmod)
+    
+    corrBeta <- append(corrBeta, round(summod[["coefficients"]][2, 1], 3))
+    corrp <- append(corrp, round(aovmod$`Pr(>F)`[1], 3))
+    
+    valmnbeta <- append(valmnbeta, round(summod[["coefficients"]][3, 1], 3))
+    valmnp <- append(valmnp, round(aovmod$`Pr(>F)`[2], 3))
+    
+    aromnbeta <- append(aromnbeta, round(summod[["coefficients"]][4, 1], 3))
+    aromnp <- append(aromnp, round(aovmod$`Pr(>F)`[3], 3))
+  
+    ActionGoalbeta <- append(ActionGoalbeta, round(summod[["coefficients"]][5, 1], 3))
+    ActionGoalp <- append(ActionGoalp, round(aovmod$`Pr(>F)`[4], 3))
+  
+    # InterValCorrbeta <- append(InterValCorrbeta, round(summod[["coefficients"]][12, 1], 3))
+    # InterValCorrp <- append(InterValCorrp, round(aovmod$`Pr(>F)`[5], 3))
+    
+    Maskli <- append(Maskli, tmpMask)
+    TRpairli <- append(TRpairli, TRnow)
+
+    fnamepdf<-sprintf("YOURRESULTSDIR/Figures/RawPlots/Corrbiasabs_%s_%s.pdf",  tmpMask, TRnow)
+fnamepng<-sprintf("YOURRESULTSDIR/Figures/RawPlots/Corrbiasabs_%s_%s.png",  tmpMask, TRnow)
+# "#2859BB"
+# '#1627BB'
+
+xlabel<-sprintf("%s Autocorrelation (z)", transform_string(tmpMask))
+ylabel<-"Temporal Memory Error (abs)"
+plotTitle <- ""
+
+if (tmpMask=="FS_FPl"){
+  regressline <- "#B64097"
+}
+else{
+  regressline <- "#95BBD8"
+}
+
+myGroupCorrelation_group_sub(tmpdf, "corr_z", "Tprecise_biasabs~corr_z + valmn + ActionGoal+order_final+ lum_rgb+ (valmn+ActionGoal|sub)","corr_z","Tprecise_biasabs",  xlabel, ylabel, highcolor, regressline, plotTitle, fnamepdf, fnamepng, 1)
+  }
+}
+sumCorrBias_corr_memfilter <- data.frame(Maskli, TRpairli, corrBeta, corrp, valmnbeta, valmnp, ActionGoalbeta, ActionGoalp)
+```
+
+### HPC
+```{r}
+tmpMask <- "harvardoxford_Hippocampus_bin60_2mm"
+TRnow <- "3_4"
+tmpdf <- myDataAll_memfiltered[myDataAll_memfiltered$mask==tmpMask & myDataAll_memfiltered$TRpairs==TRnow,]
+    
+    tmpmod <- lmer(Tprecise_biasabs~corr_z + valmn+aromn + ActionGoal+order_final+ lum_rgb+ (valmn+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+
+
+```{r}
+tmpMask <- "harvardoxford_Hippocampus_bin60_2mm"
+TRnow <- "3_4"
+tmpdf <- myDataAll_memfiltered[myDataAll_memfiltered$mask==tmpMask & myDataAll_memfiltered$TRpairs==TRnow,]
+    
+    tmpmod <- lmer(Tprecise_biasabs~corr_z + ReconMem + valmn+aromn + ActionGoal+order_final+ lum_rgb+ (valmn+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+
+###FPl
+```{r}
+tmpMask <- "FS_FPl"
+TRnow <- "3_4"
+tmpdf <- myDataAll_memfiltered[myDataAll_memfiltered$mask==tmpMask & myDataAll_memfiltered$TRpairs==TRnow,]
+    
+    tmpmod <- lmer(Tprecise_biasabs~corr_z + valmn+aromn + ActionGoal+order_final+ lum_rgb+ (valmn+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+
+```{r}
+tmpMask <- "FS_FPl"
+TRnow <- "3_4"
+tmpdf <- myDataAll_memfiltered[myDataAll_memfiltered$mask==tmpMask & myDataAll_memfiltered$TRpairs==TRnow,]
+    
+    tmpmod <- lmer(Tprecise_biasabs~corr_z +ReconMem + valmn+aromn + ActionGoal+order_final+ lum_rgb+ (valmn+ActionGoal|sub), data=tmpdf, REML =FALSE, control = lmerControl(optimizer = "bobyqa"))
+    summary(tmpmod)
+    anova(tmpmod)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

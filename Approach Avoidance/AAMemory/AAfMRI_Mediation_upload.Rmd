@@ -1,0 +1,358 @@
+---
+title: "Mediations"
+author: "Jingyi"
+date: "2025-06-11"
+output: pdf_document
+---
+
+###brms
+```{r}
+rm(list=ls(all=TRUE)) 
+```
+
+```{r}
+library(pacman)
+p_load("brms", "posterior", "bayestestR", "dplyr", "tidyverse")
+```
+
+
+```{r}
+summarize_path <- function(x) {
+  data.frame(
+    mean = mean(x),
+    ci_lower = quantile(x, 0.025),
+    ci_upper = quantile(x, 0.975),
+    p_val = 1-mean(x > 0),  
+    p_val_neg = 1-mean(x < 0) 
+  )
+}
+```
+
+
+```{r}
+tmpMask <- "FS_FPl"
+TRnow <- "3_4"
+tmpdf <- myDataAll_memfiltered[myDataAll_memfiltered$mask==tmpMask & myDataAll_memfiltered$TRpairs==TRnow,]
+```
+zscore across subjects
+```{r}
+tmpdf <- tmpdf %>% dplyr::mutate(
+    Tprecise_biasabs_z = as.numeric(scale(Tprecise_biasabs)),
+    Tprecise_bias_z = as.numeric(scale(Tprecise_bias)))
+```
+
+##pathway 1: Valmn -> uni_AMY -> FPl (within-trial pattern correlation) -> TM
+```{r}
+model_serial1 <- brm(
+  # Step 1: uni_AMY ~ valmn
+  bf(uni_whiten_AMY ~ valmn + aromn  + ActionGoal + order_final + (valmn + ActionGoal || sub)) +
+  
+  # Step 2: corr_z ~ uni_AMY
+  bf(corr_z ~ uni_whiten_AMY + aromn + ActionGoal + order_final + lum_rgb + (ActionGoal || sub)) +
+  
+  # Step 3: Tprecise_biasabs ~ corr_z
+  bf(Tprecise_biasabs_z ~ corr_z + valmn + aromn + ActionGoal + order_final + lum_rgb + (valmn + ActionGoal || sub)) +
+  
+  set_rescor(FALSE),
+  data = tmpdf,
+  prior = set_prior("normal(0, 2.5)", class = 'b'),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  control = list(max_treedepth = 15, adapt_delta = 0.95),
+  seed = 123
+)
+```
+
+```{r}
+# the direct effects
+results <- as.data.frame(describe_posterior(model_serial1, ci_method = "HDI", centrality = "mean", test = "pd")) %>% print
+```
+
+**Get beta**
+get posterior
+```{r}
+post <- posterior_samples(model_serial1)
+post$p1 <- post$b_uniwhitenAMY_valmn
+post$p2 <- post$b_corrz_uni_whiten_AMY
+post$p3 <- post$b_Tprecisebiasabsz_corr_z
+post$indirect_serial <- post$b_uniwhitenAMY_valmn * post$b_corrz_uni_whiten_AMY * post$b_Tprecisebiasabsz_corr_z
+post$direct_effect <- post$b_Tprecisebiasabsz_valmn
+post$total_effect <- post$indirect_serial + post$direct_effect
+
+post$prop_mediated <- post$indirect_serial / post$total_effect
+
+results <- as.data.frame(describe_posterior(post[, c("p1", "p2", "p3", "indirect_serial", "direct_effect", "total_effect", "prop_mediated")], ci_method = "HDI", centrality = "mean", test = "pd", round = 6))
+View(results)
+```
+```{r}
+post %>%
+  ggplot(aes(x = indirect_serial, fill = factor(0), color = factor(0))) +
+  geom_density(alpha = .5) +
+  # scale_color_ptol() +
+  # scale_fill_ptol() +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = "The serial indirect effect of valence on temporal memory via AMY-FPl pathway", x = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Get p
+```{r}
+beta_results <- list(
+  p1 = summarize_path(post$b_uniwhitenAMY_valmn),
+  p2 = summarize_path(post$b_corrz_uni_whiten_AMY),
+  p3 = summarize_path(post$b_Tprecisebiasabsz_corr_z),
+  indirect = summarize_path(post$b_uniwhitenAMY_valmn * post$b_corrz_uni_whiten_AMY * post$b_Tprecisebiasabsz_corr_z),
+  direct = summarize_path(post$b_Tprecisebiasabsz_valmn),
+  total = summarize_path(post$indirect_serial + post$direct_effect),
+  prop_mediated = summarize_path(post$indirect_serial / post$total_effect)
+)
+
+do.call(rbind, beta_results)
+```
+
+Get prior
+```{r}
+get_prior(model_serial1$formula, data = tmpdf, family = gaussian())
+# or after fitting:
+prior_summary(model_serial1)
+```
+
+##pathway 2 modulated mediation (directional) via perirhinal cortex
+valmn -> uni_PRC -> ConfReconMem*Trealcat -> TM
+```{r}
+#get remember only
+tmpdf_rem <- tmpdf[tmpdf$ReconMem == "Recognized",]
+#relevel "late" to be the reference
+tmpdf_rem$TrealCat <- relevel(tmpdf_rem$TrealCat, ref = "Late")
+levels(tmpdf_rem$TrealCat)
+
+#model for the mediator (valmn->ConfReconMem)
+fit_M1_PRCmod6 <- brm(
+  formula = uni_whiten_PRC ~ valmn + aromn + ActionGoal+order_final+ (valmn||sub), 
+  # set_rescor(FALSE),
+  data = tmpdf_rem,
+  family = gaussian(),
+  prior = set_prior("normal(0, 2.5)", class = 'b'),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  control = list(max_treedepth = 15, adapt_delta = 0.95),
+  seed = 123
+)
+
+#model for the mediator (ConfReconMem -> uni_PRC)
+fit_M2_PRCmod6 <- brm(
+  formula = ConfReconMem ~ uni_whiten_PRC + valmn + aromn + ActionGoal+order_final+ (valmn||sub), 
+  # set_rescor(FALSE),
+  data = tmpdf_rem,
+  family = gaussian(),
+  prior = set_prior("normal(0, 2.5)", class = 'b'),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  control = list(max_treedepth = 15, adapt_delta = 0.95),
+  seed = 123
+)
+
+#model for outcome (TM) with moderation
+fit_Y_PRCmod6 <- brm(
+  formula = Tprecise_bias_z~uni_whiten_PRC+ConfReconMem*TrealCat+valmn+aromn+ActionGoal+order_final+ (valmn||sub),
+  # set_rescor(FALSE),
+  prior = set_prior("normal(0, 2.5)", class = 'b'),
+  data = tmpdf_rem,
+  family = gaussian(),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  control = list(max_treedepth = 15, adapt_delta = 0.95),
+  seed = 123
+)
+```
+get posterior
+```{r}
+post_M1 <- as_draws_df(fit_M1_PRCmod6)
+post_M2 <- as_draws_df(fit_M2_PRCmod6)
+post_Y <- as_draws_df(fit_Y_PRCmod6)
+
+#a_path: valmn->ConfReconMem
+post$a1 <- post_M1$b_valmn
+#a2_path: ConfReconMem->PRC
+post$a2 <- post_M2$b_uni_whiten_PRC
+#b1_path: PRC main effect on TempMem
+post$b1 <- post_Y$b_ConfReconMem
+#b2_path moderation
+post$b3_2 <- post_Y$`b_ConfReconMem:TrealCatEarly`
+post$b3_3 <- post_Y$`b_ConfReconMem:TrealCatMid`
+
+#indirect effects
+post$ind1 <- (post$a1)*(post$a2)*(post$b1)
+post$ind2 <- (post$a1)*(post$a2)*(post$b1 + post$b3_2)
+post$ind3 <- (post$a1)*(post$a2)*(post$b1 + post$b3_3)
+
+#direct effect
+post$direct_effect <- post_Y$b_valmn
+
+# post$total_effect <- post$ind1 + post$direct_effect
+# 
+# post$prop_mediated <- post$indirect_serial / post$total_effect
+
+results <- as.data.frame(describe_posterior(post[, c("a1","a2", "b1", "b3_2", "b3_3", "ind1", "ind2", "ind3", "direct_effect")], ci_method = "HDI", centrality = "mean", test = "pd", round = 6))
+```
+
+Get p
+```{r}
+beta_results <- list(
+  a1 = summarize_path(post_M1$b_valmn),
+  a2 = summarize_path(post_M2$b_uni_whiten_PRC),
+  b1 = summarize_path(post_Y$b_ConfReconMem),
+  b3_2 = summarize_path(post_Y$`b_ConfReconMem:TrealCatEarly`),
+  b3_3 = summarize_path(post_Y$`b_ConfReconMem:TrealCatMid`),
+  indirect1 = summarize_path((post_M1$b_valmn)*(post_M2$b_uni_whiten_PRC) * (post_Y$b_ConfReconMem)),
+  indirect2 = summarize_path((post_M1$b_valmn)*(post_M2$b_uni_whiten_PRC) * (post_Y$b_ConfReconMem + post_Y$`b_ConfReconMem:TrealCatEarly`)),
+  indirect3 = summarize_path((post_M1$b_valmn)*(post_M2$b_uni_whiten_PRC) * (post_Y$b_ConfReconMem + post_Y$`b_ConfReconMem:TrealCatMid`)),
+  direct = summarize_path(post_Y$b_valmn)
+)
+
+do.call(rbind, beta_results)
+```
+
+##Pathway 3 (HPC between-trial pattern correlation)
+```{r}
+library(dplyr)
+#load HPC neural similarity
+HPC <- read.csv("YOURRESULTSDIR/RSA/RSAbymaskDemean/harvardoxford_Hippocampus_bin60_2mm_all_rsas_betas_whitened_trialwise_extended.csv")
+HPC_select <- HPC %>%
+  dplyr::select(
+    sub, mask, run, corr_z, trial1, trial2, triallag,
+    StimVal1, order, ImgStim1, Tprecise_biasabs1
+  )
+colnames(HPC_select) <- c("sub", "maskHPC", "run", "corr_z_HPC", "trial", "trial2", "triallag", "StimVal1",  "order", "ImgStim", "Tprecise_biasabs")
+HPC_select <- HPC_select[HPC_select$triallag == 1,]
+
+#Merge
+tmpdfall <- dplyr::left_join(tmpdf, HPC_select, by = c("sub", "run", "trial", "Tprecise_biasabs", "ImgStim"))
+```
+
+```{r}
+model_serial3 <- brm(
+  # Step 1: uni_AMY ~ valmn
+  bf(uni_whiten_AMY ~ valmn + aromn + ActionGoal + order_final + (valmn + ActionGoal || sub)) +
+  
+  # Step 2: corr_z ~ uni_AMY 
+  bf(corr_z_HPC ~ uni_whiten_AMY  + aromn + ActionGoal + order_final + (ActionGoal || sub)) +
+  
+  # Step 3: Tprecise_biasabs ~ corr_z + uni_AMY + valmn
+  bf(Tprecise_biasabs_z ~ corr_z_HPC + valmn + aromn + ActionGoal + order_final + (valmn + ActionGoal || sub)) +
+  
+  set_rescor(FALSE),
+  prior = set_prior("normal(0, 2.5)", class = 'b'),
+  data = tmpdfall,
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  control = list(max_treedepth = 15, adapt_delta = 0.95),
+  seed = 123
+)
+```
+get posterior
+```{r}
+post <- posterior_samples(model_serial3)
+post$p1 <- post$b_uniwhitenAMY_valmn
+post$p2 <- post$b_corrzHPC_uni_whiten_AMY
+post$p3 <- post$b_Tprecisebiasabsz_corr_z_HPC
+post$indirect_serial <- post$b_uniwhitenAMY_valmn * post$b_corrzHPC_uni_whiten_AMY * post$b_Tprecisebiasabsz_corr_z_HPC
+post$direct_effect <- post$b_Tprecisebiasabsz_valmn
+post$total_effect <- post$indirect_serial + post$direct_effect
+
+post$prop_mediated <- post$indirect_serial / post$total_effect
+
+results <- as.data.frame(describe_posterior(post[, c("p1", "p2", "p3", "indirect_serial", "direct_effect", "total_effect", "prop_mediated")], ci_method = "HDI", centrality = "mean", test = "pd", round = 6))
+```
+
+Get p
+```{r}
+beta_results <- list(
+  p1 = summarize_path(post$b_uniwhitenAMY_valmn),
+  p2 = summarize_path(post$b_corrzHPC_uni_whiten_AMY),
+  p3 = summarize_path(post$b_Tprecisebiasabsz_corr_z_HPC),
+  indirect = summarize_path(post$b_uniwhitenAMY_valmn * post$b_corrzHPC_uni_whiten_AMY * post$b_Tprecisebiasabsz_corr_z_HPC),
+  direct = summarize_path(post$b_Tprecisebiasabsz_valmn),
+  total = summarize_path(post$indirect_serial + post$direct_effect),
+  prop_mediated = summarize_path(post$indirect_serial / post$total_effect)
+)
+
+do.call(rbind, beta_results)
+```
+
+
+
+##Test for paralell mediation
+Valmn -> uni_AMY -> FPl -> TM
+Valmn -> uni_AMY -> HPC -> TM
+```{r}
+model_parallel_3 <- brm(
+  # M1: AMY ~ valmn
+  bf(uni_whiten_AMY ~ valmn + aromn + ActionGoal + order_final+(valmn + ActionGoal || sub)) +
+  
+  # M2: corr_z ~ AMY 
+  bf(corr_z ~ uni_whiten_AMY + aromn + ActionGoal + order_final +(ActionGoal || sub)) +
+    
+  # M2: corr_z ~ AMY 
+  bf(corr_z_HPC ~ uni_whiten_AMY + aromn + ActionGoal + order_final +(ActionGoal || sub)) +
+  
+  
+  # Final outcome: Tprecise_biasabs ~ corr_z + RPC + valmn
+  bf(Tprecise_biasabs_z ~ corr_z + corr_z_HPC + valmn + aromn + ActionGoal + order_final + (valmn + ActionGoal || sub)) +
+  
+  set_rescor(FALSE),
+  prior = set_prior("normal(0, 2.5)", class = 'b'),
+  data = tmpdfall,
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  control = list(max_treedepth = 15, adapt_delta = 0.95),
+  seed = 123
+)
+```
+get posterior
+```{r}
+post <- posterior_samples(model_parallel_3)
+post$p1 = post$b_uniwhitenAMY_valmn
+  post$p2 = post$b_corrzHPC_uni_whiten_AMY
+  post$p3 = post$b_corrz_uni_whiten_AMY
+  post$p4 = post$b_Tprecisebiasabsz_corr_z_HPC
+  post$p5 = post$b_Tprecisebiasabsz_corr_z
+post$indirectHPC <- post$b_uniwhitenAMY_valmn*post$b_corrzHPC_uni_whiten_AMY*post$b_Tprecisebiasabsz_corr_z_HPC
+post$indirectFPL <- post$b_uniwhitenAMY_valmn*post$b_corrz_uni_whiten_AMY*post$b_Tprecisebiasabsz_corr_z
+post$direct_effect <- post$b_Tprecisebiasabsz_valmn
+post$total_effect <- post$indirectHPC + post$indirectFPL + post$direct_effect
+post$indirect_effect <- post$indirectHPC + post$indirectFPL
+
+post$prop_mediated_1 <- post$indirectHPC + post$indirectFPL / post$total_effect
+post$prop_mediated_2 <- post$indirectFPL/ post$total_effect
+
+results <- as.data.frame(describe_posterior(post[, c("p1", "p2","p3","p4","p5","indirectHPC", "indirectFPL", "direct_effect", "total_effect", "prop_mediated_1", "prop_mediated_2")], ci_method = "HDI", centrality = "mean", test = "pd", round = 6))
+```
+
+Get p
+```{r}
+beta_results <- list(
+  p1 = summarize_path(post$b_uniwhitenAMY_valmn),
+  p2 = summarize_path(post$b_corrzHPC_uni_whiten_AMY),
+  p3 = summarize_path(post$b_corrz_uni_whiten_AMY),
+  p4 = summarize_path(post$b_Tprecisebiasabsz_corr_z_HPC),
+  p5 = summarize_path(post$b_Tprecisebiasabsz_corr_z),
+indirectHPC = summarize_path(post$b_uniwhitenAMY_valmn*post$b_corrzHPC_uni_whiten_AMY*post$b_Tprecisebiasabsz_corr_z_HPC),
+indirectFPL = summarize_path(post$b_uniwhitenAMY_valmn*post$b_corrz_uni_whiten_AMY*post$b_Tprecisebiasabsz_corr_z),
+direct_effect = summarize_path(post$b_Tprecisebiasabsz_valmn),
+total_effect = summarize_path(post$indirectHPC + post$indirectFPL + post$direct_effect),
+indirect_effect = summarize_path(post$indirectHPC + post$indirectFPL),
+
+prop_mediated_1 = summarize_path(post$indirectHPC + post$indirectFPL / post$total_effect))
+
+do.call(rbind, beta_results)
+```
+
+
