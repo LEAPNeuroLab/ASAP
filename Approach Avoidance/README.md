@@ -9,5 +9,5 @@ The 'paradigm script' folder contains PsychoPy scripts and Python scripts for th
 The "AAMemory" folder contains the processing and analysis scripts used for temporal memory-related results.
 
 
-![Asap!](https://github.com/LEAPNeuroLab/ASAP/blob/main/Approach%20Avoidance/Images/asapImg.png "Asap logo")
+![Asap!](https://github.com/LEAPNeuroLab/ASAP/blob/main/Approach%20Avoidance/IconImages/asapImg.png "Asap logo")
 
